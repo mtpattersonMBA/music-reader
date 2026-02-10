@@ -2,105 +2,213 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#000" />
   <link rel="manifest" href="manifest.json" />
   <title>Music Reader PWA</title>
   <style>
+    /* RESET & BASICS */
     body, html {
       margin: 0; padding: 0;
-      font-family: sans-serif;
-      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #111;
       color: #fff;
-      overflow: hidden;
+      overflow: hidden; /* Prevent body scroll, we handle it in containers */
+      height: 100%;
     }
-    #library, #viewer {
-      display: none;
+
+    /* LIBRARY VIEW */
+    #library {
+      padding: 30px;
+      height: 100vh;
+      overflow-y: auto;
+      background: #1a1a1a;
+    }
+    .library-header {
+      margin-bottom: 30px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 20px;
+    }
+    .file-btn {
+      display: block;
+      width: 100%;
       padding: 20px;
+      margin-bottom: 15px;
+      background: #333;
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-size: 1.2rem;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
-    .pdf-entry {
-      margin-bottom: 10px;
+    .delete-btn {
+      background: #ff4444;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      margin-left: 10px;
     }
-    .pdf-entry button {
-      font-size: 1.5rem;
-      padding: 10px;
-      margin: 5px;
-      background: #fff;
-      color: #000;
+
+    /* READER VIEW */
+    #viewer {
+      display: none;
+      position: relative;
+      height: 100%;
+      width: 100%;
     }
-    #focusBox {
+
+    /* 1. THE MAIN SCROLLABLE LAYER (Context) */
+    #mainContainer {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      overflow-y: scroll;
+      -webkit-overflow-scrolling: touch;
+      z-index: 1; /* Bottom layer */
+      padding-top: 40vh; /* Space to let top measures reach the lens */
+      padding-bottom: 40vh;
+    }
+
+    /* 2. THE LENS CONTAINER (Fixed Window) */
+    #lensOverlay {
       position: fixed;
-      top: 40%;
+      top: 35%; /* Position of the lens on screen */
       left: 0;
       width: 100%;
-      height: 20%;
-      border: 2px solid yellow;
-      pointer-events: none;
-      z-index: 5;
+      height: 25vh; /* Height of the lens strip */
+      border-top: 2px solid #ffff00;
+      border-bottom: 2px solid #ffff00;
+      background: #000;
+      z-index: 10; /* Top layer */
+      overflow: hidden; /* Clips the zoomed content */
+      pointer-events: none; /* Let touches pass through to the scroller below */
+      box-shadow: 0 0 50px rgba(0,0,0,0.8);
     }
-    #pdfContainer {
-      position: relative;
-      overflow-y: scroll;
-      height: 80vh;
-      scroll-behavior: smooth;
+
+    /* 3. THE MAGNIFIED CONTENT (Inside the lens) */
+    #lensContent {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      transform-origin: top left;
+      /* We will transform this via JS */
     }
-    .page {
-      transform-origin: center center;
-      transition: transform 0.1s;
+
+    /* CANVAS STYLING */
+    canvas {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
     }
+    
+    /* Dim the context layer slightly to make lens pop */
+    #mainContainer canvas {
+      opacity: 0.4; 
+    }
+
+    /* CONTROLS OVERLAY */
     #controls {
       position: fixed;
-      bottom: 0;
+      bottom: 0; left: 0;
       width: 100%;
+      height: 15vh;
+      background: linear-gradient(transparent, #000 80%);
       display: flex;
-      justify-content: center;
-      gap: 20px;
-      background: #000;
-      padding: 10px;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 20;
+      pointer-events: none; /* Let clicks pass through empty areas */
     }
-    #controls button {
-      font-size: 2rem;
-      padding: 15px 25px;
+    .ctrl-btn {
+      pointer-events: auto;
+      background: rgba(50, 50, 50, 0.9);
+      color: #fff;
+      border: 1px solid #555;
+      padding: 15px 30px;
+      font-size: 1.5rem;
+      border-radius: 50px;
+      backdrop-filter: blur(5px);
+    }
+    #closeBtn {
+      position: fixed;
+      top: 20px; right: 20px;
+      z-index: 30;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      border: none;
+      padding: 10px;
+      border-radius: 50%;
+      width: 40px; height: 40px;
     }
   </style>
 </head>
 <body>
+
   <div id="library">
-    <h1>My Sheet Music</h1>
-    <input type="file" id="fileInput" accept="application/pdf" />
+    <div class="library-header">
+      <h1>My Library</h1>
+      <input type="file" id="fileInput" accept="application/pdf" style="margin-top:10px; font-size:1.2rem;">
+    </div>
     <div id="pdfList"></div>
   </div>
 
   <div id="viewer">
-    <div id="focusBox"></div>
-    <div id="pdfContainer"></div>
+    <button id="closeBtn" onclick="closeReader()">✕</button>
+    
+    <div id="lensOverlay">
+      <div id="lensContent"></div>
+    </div>
+
+    <div id="mainContainer"></div>
+
     <div id="controls">
-      <button onclick="scrollPDF(-100)">⬆️ Scroll Up</button>
-      <button onclick="scrollPDF(100)">⬇️ Scroll Down</button>
+      <button class="ctrl-btn" onclick="scrollRel(-200)">⬆️</button>
+      <button class="ctrl-btn" onclick="scrollRel(200)">⬇️</button>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
   <script>
+    // --- 1. CONFIGURATION ---
+    const ZOOM_LEVEL = 2.5; // How much to blow up the music (2.5x)
+    const LENS_TOP_VH = 0.35; // Must match CSS 'top: 35%' (0.35)
+
+    // --- 2. DATABASE SETUP (Dexie) ---
     const db = new Dexie("MusicReaderDB");
     db.version(1).stores({ pdfs: "++id,name,data" });
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+    // --- 3. DOM ELEMENTS ---
     const library = document.getElementById("library");
     const viewer = document.getElementById("viewer");
-    const pdfContainer = document.getElementById("pdfContainer");
+    const mainContainer = document.getElementById("mainContainer");
+    const lensContent = document.getElementById("lensContent");
+    const lensOverlay = document.getElementById("lensOverlay");
 
-    async function listPDFs() {
+    // --- 4. LIBRARY LOGIC ---
+    async function refreshLibrary() {
       const list = document.getElementById("pdfList");
       list.innerHTML = "";
       const pdfs = await db.pdfs.toArray();
+      
+      if(pdfs.length === 0) {
+        list.innerHTML = "<p style='color:#666;'>No scores yet. Upload a PDF above.</p>";
+        return;
+      }
+
       pdfs.forEach(pdf => {
         const div = document.createElement("div");
-        div.className = "pdf-entry";
+        div.className = "file-btn";
         div.innerHTML = `
-          <strong>${pdf.name}</strong><br>
-          <button onclick="openPDF(${pdf.id})">Open</button>
-          <button onclick="deletePDF(${pdf.id})">Delete</button>
+          <span onclick="openPDF(${pdf.id})">🎵 ${pdf.name}</span>
+          <button class="delete-btn" onclick="deletePDF(${pdf.id})">Delete</button>
         `;
         list.appendChild(div);
       });
@@ -111,68 +219,186 @@
       if (file) {
         const data = await file.arrayBuffer();
         await db.pdfs.add({ name: file.name, data });
-        listPDFs();
+        refreshLibrary();
+        e.target.value = ""; // Reset input
       }
     });
 
+    async function deletePDF(id) {
+      if(confirm("Delete this score?")) {
+        await db.pdfs.delete(id);
+        refreshLibrary();
+      }
+    }
+
+    // --- 5. VIEWER LOGIC (The Magic Part) ---
     async function openPDF(id) {
       library.style.display = "none";
       viewer.style.display = "block";
-      pdfContainer.innerHTML = "";
+      mainContainer.innerHTML = "";
+      lensContent.innerHTML = "";
 
       const { data } = await db.pdfs.get(id);
       const loadingTask = pdfjsLib.getDocument({ data });
       const pdf = await loadingTask.promise;
 
+      // Render Loop
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
-        const scale = 2;
+        const scale = 1.5; // Base quality scale
         const viewport = page.getViewport({ scale });
 
-        const canvas = document.createElement("canvas");
-        const context = canvas.getContext("2d");
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        canvas.className = "page";
+        // A. Create Canvas for Main View (Context)
+        const canvasMain = document.createElement("canvas");
+        const ctxMain = canvasMain.getContext("2d");
+        canvasMain.height = viewport.height;
+        canvasMain.width = viewport.width;
+        // Adjust width to fit screen
+        canvasMain.style.width = "100%";
+        canvasMain.style.height = "auto";
+        
+        // B. Create Canvas for Lens View (Zoom)
+        // We create a separate canvas so we don't have blurry scaling
+        const canvasLens = document.createElement("canvas");
+        const ctxLens = canvasLens.getContext("2d");
+        canvasLens.height = viewport.height;
+        canvasLens.width = viewport.width;
+        canvasLens.style.width = "100%"; 
+        canvasLens.style.height = "auto";
 
-        await page.render({ canvasContext: context, viewport }).promise;
-        pdfContainer.appendChild(canvas);
+        // Render Page
+        const renderContextMain = { canvasContext: ctxMain, viewport };
+        await page.render(renderContextMain).promise;
+        
+        // Copy to Lens Canvas (Much faster than re-rendering PDF)
+        ctxLens.drawImage(canvasMain, 0, 0);
+
+        // Append to DOM
+        mainContainer.appendChild(canvasMain);
+        lensContent.appendChild(canvasLens);
       }
 
-      const focusBox = document.getElementById("focusBox");
-      const observer = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            entry.target.style.transform = "scale(2.5)";
-          } else {
-            entry.target.style.transform = "scale(1)";
-          }
-        });
-      }, {
-        root: pdfContainer,
-        threshold: 0.5,
-        rootMargin: "-40% 0% -40% 0%"
-      });
-
-      document.querySelectorAll(".page").forEach(page => observer.observe(page));
+      // Initialize the Lens Sync
+      syncLens();
     }
 
-    async function deletePDF(id) {
-      await db.pdfs.delete(id);
-      listPDFs();
-    }
-
-    function scrollPDF(amount) {
-      pdfContainer.scrollBy({ top: amount, behavior: "smooth" });
-    }
-
-    window.addEventListener("load", () => {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js');
-      }
+    function closeReader() {
+      viewer.style.display = "none";
       library.style.display = "block";
-      listPDFs();
-    });
+    }
+
+    // --- 6. SCROLL SYNC ENGINE ---
+    // This connects the main scroll to the lens position
+    function syncLens() {
+      const lensHeight = lensOverlay.offsetHeight;
+      const lensTopOffset = window.innerHeight * LENS_TOP_VH;
+      
+      // Apply the Zoom Scale to the Lens Content Wrapper
+      lensContent.style.transformOrigin = `center ${lensTopOffset}px`; // Pivot zoom around the lens bar
+      // Actually, simpler approach: Scale the content, then translate it
+      lensContent.style.width = "100%";
+      
+      // Update on scroll
+      const update = () => {
+        const scrollTop = mainContainer.scrollTop;
+        
+        // MATH EXPLANATION:
+        // We want the pixels currently at (scrollTop + lensTopOffset) in the main view
+        // to be centered in the lens.
+        // Since the lens is fixed, we must shift the lensContent UP by the same amount the user scrolled,
+        // multiplied by the zoom factor.
+        
+        // 1. Where are we in the document?
+        const scrollY = -scrollTop; 
+        
+        // 2. Adjust for the Lens Position (The "Offset")
+        // We need to shift the content so the part under the lens aligns with the top of the lens container
+        // Then we let CSS overflow hide the rest.
+        
+        const lensShift = scrollY - lensTopOffset; 
+        
+        // Apply Transform: 
+        // Scale it up, and move it so the correct slice is visible.
+        // We use a matrix transform for smoothness or simple translate/scale chain.
+        
+        // Simplified Logic: 
+        // Move the content UP by (scrollTop + lensTopOffset)
+        // This puts the target text at the top of the lens container (0px).
+        // Then apply scale.
+        
+        lensContent.style.transformOrigin = "center top"; 
+        
+        // The formula:
+        // TranslateY = -(scrollTop + lensTopOffset)
+        // BUT, since we scale by ZOOM_LEVEL, the visual movement is multiplied.
+        // We need to counter-act the scale for the position.
+        
+        const targetY = -(scrollTop); 
+        
+        // CSS Transform order: Scale is applied, then Translate? No, standard is Translate then Scale? 
+        // Let's explicitly write the string.
+        
+        // If we Scale(2.5), the content becomes 2.5x taller.
+        // To show the pixel at Y=100 (original), we need to move to Y = -100 * 2.5.
+        
+        // Adjust for the lens sticking point (padding-top of mainContainer handles the initial offset)
+        // mainContainer has 40vh padding. So scrollTop=0 means we are seeing the padding.
+        
+        // Calculate the raw pixel offset of the image relative to the viewport top
+        // The first image starts at 40vh (due to padding).
+        // If scrollTop is 0, image top is at 40vh.
+        // If scrollTop is 100, image top is at 40vh - 100.
+        
+        // We want the lensContent to mimic this position, but scaled.
+        // LensContent Top should be: (40vh - scrollTop) * ZOOM_LEVEL.
+        // But the LensOverlay is fixed at 35vh (LENS_TOP_VH). 
+        // So we need to subtract that to make it relative to the overlay.
+        
+        const paddingOffset = window.innerHeight * 0.40; // 40vh padding
+        const currentImageY = paddingOffset - scrollTop;
+        
+        // We want the content inside the lens to be positioned such that the
+        // magnified line aligns with the lens window.
+        // Since the user is looking at the lens (fixed), and the context (scrolling),
+        // we just need to ensure the "Image Top" inside the lens matches the logic:
+        // LensImageTop = (CurrentImageY - LensScreenPosition) * Zoom + LensScreenPosition? 
+        // No, easier:
+        
+        // Just sync the relative position.
+        // If the music line is 50px below the Lens Top in Main View...
+        // It should be 50px * Zoom below the Lens Top in Lens View.
+        
+        // Distance from Lens Top (in Main View) = currentImageY - (window.innerHeight * LENS_TOP_VH);
+        const dist = currentImageY; // Relative to viewport top
+        
+        // We want to position the lens content relative to the LensOverlay (which is at LENS_TOP_VH)
+        // So offset inside overlay = (dist - LENS_TOP_VH_pixels) * ZOOM_LEVEL
+        
+        const lensOverlayTop = window.innerHeight * LENS_TOP_VH;
+        const relativeDiff = dist - lensOverlayTop;
+        const finalY = relativeDiff * ZOOM_LEVEL;
+        
+        // Also center horizontally? No, width is 100%.
+        
+        lensContent.style.transform = `translateY(${finalY}px) scale(${ZOOM_LEVEL})`;
+        lensContent.style.width = `${100 / ZOOM_LEVEL}%`; // Counter-scale width so it doesn't overflow horizontally
+        lensContent.style.marginLeft = `${(100 - (100/ZOOM_LEVEL))/2}%`; // Center it
+      };
+
+      mainContainer.addEventListener("scroll", update);
+      window.addEventListener("resize", update); // Handle orientation change
+      update(); // Initial call
+    }
+
+    function scrollRel(amount) {
+      mainContainer.scrollBy({ top: amount, behavior: 'smooth' });
+    }
+
+    // Init
+    window.onload = () => {
+      refreshLibrary();
+    };
+
   </script>
 </body>
 </html>
