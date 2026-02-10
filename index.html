@@ -3,401 +3,280 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#000" />
-  <link rel="manifest" href="manifest.json" />
-  <title>Music Reader PWA</title>
+  <title>System Slicer PWA</title>
   <style>
-    /* RESET & BASICS */
-    body, html {
-      margin: 0; padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #111;
-      color: #fff;
-      overflow: hidden; /* Prevent body scroll, we handle it in containers */
-      height: 100%;
-    }
-
-    /* LIBRARY VIEW */
-    #library {
-      padding: 30px;
-      height: 100vh;
-      overflow-y: auto;
-      background: #1a1a1a;
-    }
-    .library-header {
-      margin-bottom: 30px;
-      border-bottom: 1px solid #333;
-      padding-bottom: 20px;
-    }
-    .file-btn {
-      display: block;
-      width: 100%;
-      padding: 20px;
-      margin-bottom: 15px;
-      background: #333;
-      border: none;
-      border-radius: 12px;
-      color: white;
-      font-size: 1.2rem;
-      text-align: left;
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .delete-btn {
-      background: #ff4444;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      margin-left: 10px;
-    }
-
-    /* READER VIEW */
-    #viewer {
-      display: none;
-      position: relative;
-      height: 100%;
-      width: 100%;
-    }
-
-    /* 1. THE MAIN SCROLLABLE LAYER (Context) */
-    #mainContainer {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%;
-      height: 100%;
-      overflow-y: scroll;
-      -webkit-overflow-scrolling: touch;
-      z-index: 1; /* Bottom layer */
-      padding-top: 40vh; /* Space to let top measures reach the lens */
-      padding-bottom: 40vh;
-    }
-
-    /* 2. THE LENS CONTAINER (Fixed Window) */
-    #lensOverlay {
-      position: fixed;
-      top: 35%; /* Position of the lens on screen */
-      left: 0;
-      width: 100%;
-      height: 25vh; /* Height of the lens strip */
-      border-top: 2px solid #ffff00;
-      border-bottom: 2px solid #ffff00;
+    body {
+      margin: 0;
       background: #000;
-      z-index: 10; /* Top layer */
-      overflow: hidden; /* Clips the zoomed content */
-      pointer-events: none; /* Let touches pass through to the scroller below */
-      box-shadow: 0 0 50px rgba(0,0,0,0.8);
-    }
-
-    /* 3. THE MAGNIFIED CONTENT (Inside the lens) */
-    #lensContent {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%;
-      transform-origin: top left;
-      /* We will transform this via JS */
-    }
-
-    /* CANVAS STYLING */
-    canvas {
-      display: block;
-      margin: 0 auto;
-      max-width: 100%;
-    }
-    
-    /* Dim the context layer slightly to make lens pop */
-    #mainContainer canvas {
-      opacity: 0.4; 
-    }
-
-    /* CONTROLS OVERLAY */
-    #controls {
-      position: fixed;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: 15vh;
-      background: linear-gradient(transparent, #000 80%);
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow: hidden; /* No scrolling allowed */
+      height: 100vh;
       display: flex;
-      justify-content: space-around;
-      align-items: center;
-      z-index: 20;
-      pointer-events: none; /* Let clicks pass through empty areas */
+      flex-direction: column;
     }
-    .ctrl-btn {
-      pointer-events: auto;
-      background: rgba(50, 50, 50, 0.9);
-      color: #fff;
-      border: 1px solid #555;
-      padding: 15px 30px;
+
+    /* UPLOAD SCREEN */
+    #uploadScreen {
+      padding: 40px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+    }
+    .big-btn {
+      background: #333;
+      color: white;
+      border: 2px solid #555;
+      padding: 20px;
       font-size: 1.5rem;
-      border-radius: 50px;
-      backdrop-filter: blur(5px);
+      border-radius: 15px;
+      margin: 20px 0;
     }
-    #closeBtn {
-      position: fixed;
-      top: 20px; right: 20px;
-      z-index: 30;
-      background: rgba(0,0,0,0.5);
+
+    /* THE STAGE */
+    #performanceMode {
+      display: none;
+      flex: 1;
+      position: relative;
+      flex-direction: column;
+    }
+
+    #systemCanvas {
+      width: 100%;
+      height: 70vh; /* Takes up most of the screen */
+      object-fit: contain; /* Ensures the system is fully visible */
+      background: #fff; /* White background for the music itself */
+      border-bottom: 5px solid #333;
+    }
+
+    /* CONTROLS */
+    #controls {
+      height: 30vh;
+      display: flex;
+      background: #111;
+    }
+    .nav-btn {
+      flex: 1;
+      font-size: 3rem;
+      background: #222;
       color: #fff;
-      border: none;
-      padding: 10px;
-      border-radius: 50%;
-      width: 40px; height: 40px;
+      border: 1px solid #444;
+      active: background: #444;
+    }
+    #prevBtn { background: #1a1a1a; border-right: 1px solid #000; }
+    #nextBtn { background: #004400; font-weight: bold; } /* Green tint for Next */
+
+    /* LOADING OVERLAY */
+    #loader {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9);
+      color: white;
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      font-size: 2rem;
     }
   </style>
 </head>
 <body>
 
-  <div id="library">
-    <div class="library-header">
-      <h1>My Library</h1>
-      <input type="file" id="fileInput" accept="application/pdf" style="margin-top:10px; font-size:1.2rem;">
-    </div>
-    <div id="pdfList"></div>
+  <div id="uploadScreen">
+    <h1>Music Slicer</h1>
+    <p>Upload a PDF. I will cut it into systems and show them one by one.</p>
+    <input type="file" id="fileInput" accept="application/pdf" class="big-btn">
   </div>
 
-  <div id="viewer">
-    <button id="closeBtn" onclick="closeReader()">✕</button>
+  <div id="loader">Processing Score...<br><span style="font-size:1rem; color:#aaa">Scanning for staves</span></div>
+
+  <div id="performanceMode">
+    <canvas id="systemCanvas"></canvas>
     
-    <div id="lensOverlay">
-      <div id="lensContent"></div>
-    </div>
-
-    <div id="mainContainer"></div>
-
     <div id="controls">
-      <button class="ctrl-btn" onclick="scrollRel(-200)">⬆️</button>
-      <button class="ctrl-btn" onclick="scrollRel(200)">⬇️</button>
+      <button id="prevBtn" class="nav-btn" onclick="prevSystem()">⬅️</button>
+      <button id="nextBtn" class="nav-btn" onclick="nextSystem()">Next ➡️</button>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <script>
-    // --- 1. CONFIGURATION ---
-    const ZOOM_LEVEL = 2.5; // How much to blow up the music (2.5x)
-    const LENS_TOP_VH = 0.35; // Must match CSS 'top: 35%' (0.35)
-
-    // --- 2. DATABASE SETUP (Dexie) ---
-    const db = new Dexie("MusicReaderDB");
-    db.version(1).stores({ pdfs: "++id,name,data" });
+    // CONFIG
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    
+    let allSystems = []; // Will hold {canvas, x, y, w, h} for every system found
+    let currentSystemIndex = 0;
+    const canvas = document.getElementById('systemCanvas');
+    const ctx = canvas.getContext('2d');
 
-    // --- 3. DOM ELEMENTS ---
-    const library = document.getElementById("library");
-    const viewer = document.getElementById("viewer");
-    const mainContainer = document.getElementById("mainContainer");
-    const lensContent = document.getElementById("lensContent");
-    const lensOverlay = document.getElementById("lensOverlay");
-
-    // --- 4. LIBRARY LOGIC ---
-    async function refreshLibrary() {
-      const list = document.getElementById("pdfList");
-      list.innerHTML = "";
-      const pdfs = await db.pdfs.toArray();
-      
-      if(pdfs.length === 0) {
-        list.innerHTML = "<p style='color:#666;'>No scores yet. Upload a PDF above.</p>";
-        return;
-      }
-
-      pdfs.forEach(pdf => {
-        const div = document.createElement("div");
-        div.className = "file-btn";
-        div.innerHTML = `
-          <span onclick="openPDF(${pdf.id})">🎵 ${pdf.name}</span>
-          <button class="delete-btn" onclick="deletePDF(${pdf.id})">Delete</button>
-        `;
-        list.appendChild(div);
-      });
-    }
-
-    document.getElementById("fileInput").addEventListener("change", async (e) => {
+    // 1. FILE HANDLING
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
-      if (file) {
-        const data = await file.arrayBuffer();
-        await db.pdfs.add({ name: file.name, data });
-        refreshLibrary();
-        e.target.value = ""; // Reset input
+      if (!file) return;
+
+      document.getElementById('loader').style.display = 'flex';
+      
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+      
+      allSystems = []; // Reset
+      
+      // Process every page
+      for (let p = 1; p <= pdf.numPages; p++) {
+        await processPage(pdf, p);
       }
+
+      // Done
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('uploadScreen').style.display = 'none';
+      document.getElementById('performanceMode').style.display = 'flex';
+      
+      // Show first system
+      currentSystemIndex = 0;
+      renderSystem();
     });
 
-    async function deletePDF(id) {
-      if(confirm("Delete this score?")) {
-        await db.pdfs.delete(id);
-        refreshLibrary();
+    // 2. THE ALGORITHM (The "Slicer")
+    async function processPage(pdf, pageNum) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2.0 }); // High res for scanning
+      
+      // Create a temporary canvas to draw the full page
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = viewport.width;
+      tempCanvas.height = viewport.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      
+      await page.render({ canvasContext: tempCtx, viewport }).promise;
+
+      // GET PIXEL DATA
+      const width = tempCanvas.width;
+      const height = tempCanvas.height;
+      const imageData = tempCtx.getImageData(0, 0, width, height).data;
+
+      // SCAN LINES
+      // We project the page onto the Y-axis (calculate 'darkness' of each row)
+      let rowDensities = new Array(height).fill(0);
+      
+      for (let y = 0; y < height; y++) {
+        // Sample every 10th pixel to save CPU
+        let darkPixels = 0;
+        for (let x = 0; x < width; x += 10) {
+          const i = (y * width + x) * 4;
+          const r = imageData[i];
+          const g = imageData[i+1];
+          const b = imageData[i+2];
+          // If pixel is not white (assuming white background)
+          if (r < 200 || g < 200 || b < 200) {
+            darkPixels++;
+          }
+        }
+        rowDensities[y] = darkPixels;
+      }
+
+      // IDENTIFY SYSTEMS
+      // We look for clusters of "dark rows" separated by "light rows"
+      const THRESHOLD = 5; // Min dark pixels to count as 'content'
+      const MIN_SYSTEM_HEIGHT = 50; // Ignore tiny specks
+      const GAP_TOLERANCE = 30; // How much white space allowed *inside* a system (e.g. between treble/bass clef)
+
+      let systems = [];
+      let inSystem = false;
+      let startY = 0;
+      let whiteSpaceCounter = 0;
+
+      for (let y = 0; y < height; y++) {
+        const isContent = rowDensities[y] > THRESHOLD;
+
+        if (isContent) {
+          if (!inSystem) {
+            inSystem = true;
+            startY = y;
+          }
+          whiteSpaceCounter = 0; // Reset gap counter
+        } else {
+          if (inSystem) {
+            whiteSpaceCounter++;
+            // If we see too much white space, close the system
+            if (whiteSpaceCounter > GAP_TOLERANCE) {
+              inSystem = false;
+              let endY = y - whiteSpaceCounter; // Backtrack to where content actually ended
+              
+              if ((endY - startY) > MIN_SYSTEM_HEIGHT) {
+                // Found a valid system!
+                // Add some padding
+                systems.push({
+                  sourceCanvas: tempCanvas,
+                  y: Math.max(0, startY - 20),
+                  h: Math.min(height, (endY - startY) + 40),
+                  w: width
+                });
+              }
+            }
+          }
+        }
+      }
+      
+      // If page ends while in a system
+      if (inSystem && (height - startY) > MIN_SYSTEM_HEIGHT) {
+        systems.push({
+          sourceCanvas: tempCanvas,
+          y: Math.max(0, startY - 20),
+          h: (height - startY) + 20,
+          w: width
+        });
+      }
+
+      allSystems.push(...systems);
+    }
+
+    // 3. THE PROJECTOR (Renderer)
+    function renderSystem() {
+      if (allSystems.length === 0) return;
+      
+      const sys = allSystems[currentSystemIndex];
+      
+      // Resize display canvas to match aspect ratio of the cut
+      // Actually, we want to fill the screen width, and let height adjust
+      canvas.width = sys.w;
+      canvas.height = sys.h;
+
+      // Draw just that slice
+      ctx.fillStyle = "white";
+      ctx.fillRect(0,0, canvas.width, canvas.height);
+      ctx.drawImage(
+        sys.sourceCanvas, 
+        0, sys.y, sys.w, sys.h, // Source coords
+        0, 0, sys.w, sys.h      // Dest coords
+      );
+    }
+
+    // 4. NAVIGATION
+    function nextSystem() {
+      if (currentSystemIndex < allSystems.length - 1) {
+        currentSystemIndex++;
+        renderSystem();
       }
     }
 
-    // --- 5. VIEWER LOGIC (The Magic Part) ---
-    async function openPDF(id) {
-      library.style.display = "none";
-      viewer.style.display = "block";
-      mainContainer.innerHTML = "";
-      lensContent.innerHTML = "";
-
-      const { data } = await db.pdfs.get(id);
-      const loadingTask = pdfjsLib.getDocument({ data });
-      const pdf = await loadingTask.promise;
-
-      // Render Loop
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const scale = 1.5; // Base quality scale
-        const viewport = page.getViewport({ scale });
-
-        // A. Create Canvas for Main View (Context)
-        const canvasMain = document.createElement("canvas");
-        const ctxMain = canvasMain.getContext("2d");
-        canvasMain.height = viewport.height;
-        canvasMain.width = viewport.width;
-        // Adjust width to fit screen
-        canvasMain.style.width = "100%";
-        canvasMain.style.height = "auto";
-        
-        // B. Create Canvas for Lens View (Zoom)
-        // We create a separate canvas so we don't have blurry scaling
-        const canvasLens = document.createElement("canvas");
-        const ctxLens = canvasLens.getContext("2d");
-        canvasLens.height = viewport.height;
-        canvasLens.width = viewport.width;
-        canvasLens.style.width = "100%"; 
-        canvasLens.style.height = "auto";
-
-        // Render Page
-        const renderContextMain = { canvasContext: ctxMain, viewport };
-        await page.render(renderContextMain).promise;
-        
-        // Copy to Lens Canvas (Much faster than re-rendering PDF)
-        ctxLens.drawImage(canvasMain, 0, 0);
-
-        // Append to DOM
-        mainContainer.appendChild(canvasMain);
-        lensContent.appendChild(canvasLens);
+    function prevSystem() {
+      if (currentSystemIndex > 0) {
+        currentSystemIndex--;
+        renderSystem();
       }
-
-      // Initialize the Lens Sync
-      syncLens();
     }
 
-    function closeReader() {
-      viewer.style.display = "none";
-      library.style.display = "block";
-    }
-
-    // --- 6. SCROLL SYNC ENGINE ---
-    // This connects the main scroll to the lens position
-    function syncLens() {
-      const lensHeight = lensOverlay.offsetHeight;
-      const lensTopOffset = window.innerHeight * LENS_TOP_VH;
-      
-      // Apply the Zoom Scale to the Lens Content Wrapper
-      lensContent.style.transformOrigin = `center ${lensTopOffset}px`; // Pivot zoom around the lens bar
-      // Actually, simpler approach: Scale the content, then translate it
-      lensContent.style.width = "100%";
-      
-      // Update on scroll
-      const update = () => {
-        const scrollTop = mainContainer.scrollTop;
-        
-        // MATH EXPLANATION:
-        // We want the pixels currently at (scrollTop + lensTopOffset) in the main view
-        // to be centered in the lens.
-        // Since the lens is fixed, we must shift the lensContent UP by the same amount the user scrolled,
-        // multiplied by the zoom factor.
-        
-        // 1. Where are we in the document?
-        const scrollY = -scrollTop; 
-        
-        // 2. Adjust for the Lens Position (The "Offset")
-        // We need to shift the content so the part under the lens aligns with the top of the lens container
-        // Then we let CSS overflow hide the rest.
-        
-        const lensShift = scrollY - lensTopOffset; 
-        
-        // Apply Transform: 
-        // Scale it up, and move it so the correct slice is visible.
-        // We use a matrix transform for smoothness or simple translate/scale chain.
-        
-        // Simplified Logic: 
-        // Move the content UP by (scrollTop + lensTopOffset)
-        // This puts the target text at the top of the lens container (0px).
-        // Then apply scale.
-        
-        lensContent.style.transformOrigin = "center top"; 
-        
-        // The formula:
-        // TranslateY = -(scrollTop + lensTopOffset)
-        // BUT, since we scale by ZOOM_LEVEL, the visual movement is multiplied.
-        // We need to counter-act the scale for the position.
-        
-        const targetY = -(scrollTop); 
-        
-        // CSS Transform order: Scale is applied, then Translate? No, standard is Translate then Scale? 
-        // Let's explicitly write the string.
-        
-        // If we Scale(2.5), the content becomes 2.5x taller.
-        // To show the pixel at Y=100 (original), we need to move to Y = -100 * 2.5.
-        
-        // Adjust for the lens sticking point (padding-top of mainContainer handles the initial offset)
-        // mainContainer has 40vh padding. So scrollTop=0 means we are seeing the padding.
-        
-        // Calculate the raw pixel offset of the image relative to the viewport top
-        // The first image starts at 40vh (due to padding).
-        // If scrollTop is 0, image top is at 40vh.
-        // If scrollTop is 100, image top is at 40vh - 100.
-        
-        // We want the lensContent to mimic this position, but scaled.
-        // LensContent Top should be: (40vh - scrollTop) * ZOOM_LEVEL.
-        // But the LensOverlay is fixed at 35vh (LENS_TOP_VH). 
-        // So we need to subtract that to make it relative to the overlay.
-        
-        const paddingOffset = window.innerHeight * 0.40; // 40vh padding
-        const currentImageY = paddingOffset - scrollTop;
-        
-        // We want the content inside the lens to be positioned such that the
-        // magnified line aligns with the lens window.
-        // Since the user is looking at the lens (fixed), and the context (scrolling),
-        // we just need to ensure the "Image Top" inside the lens matches the logic:
-        // LensImageTop = (CurrentImageY - LensScreenPosition) * Zoom + LensScreenPosition? 
-        // No, easier:
-        
-        // Just sync the relative position.
-        // If the music line is 50px below the Lens Top in Main View...
-        // It should be 50px * Zoom below the Lens Top in Lens View.
-        
-        // Distance from Lens Top (in Main View) = currentImageY - (window.innerHeight * LENS_TOP_VH);
-        const dist = currentImageY; // Relative to viewport top
-        
-        // We want to position the lens content relative to the LensOverlay (which is at LENS_TOP_VH)
-        // So offset inside overlay = (dist - LENS_TOP_VH_pixels) * ZOOM_LEVEL
-        
-        const lensOverlayTop = window.innerHeight * LENS_TOP_VH;
-        const relativeDiff = dist - lensOverlayTop;
-        const finalY = relativeDiff * ZOOM_LEVEL;
-        
-        // Also center horizontally? No, width is 100%.
-        
-        lensContent.style.transform = `translateY(${finalY}px) scale(${ZOOM_LEVEL})`;
-        lensContent.style.width = `${100 / ZOOM_LEVEL}%`; // Counter-scale width so it doesn't overflow horizontally
-        lensContent.style.marginLeft = `${(100 - (100/ZOOM_LEVEL))/2}%`; // Center it
-      };
-
-      mainContainer.addEventListener("scroll", update);
-      window.addEventListener("resize", update); // Handle orientation change
-      update(); // Initial call
-    }
-
-    function scrollRel(amount) {
-      mainContainer.scrollBy({ top: amount, behavior: 'smooth' });
-    }
-
-    // Init
-    window.onload = () => {
-      refreshLibrary();
-    };
+    // Keyboard support (Spacebar / Arrows)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === "ArrowRight" || e.key === " ") {
+        nextSystem();
+      } else if (e.key === "ArrowLeft") {
+        prevSystem();
+      }
+    });
 
   </script>
 </body>
