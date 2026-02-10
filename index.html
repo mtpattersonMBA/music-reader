@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#000" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Music Reader PWA</title>
+  <style>
+    body, html {
+      margin: 0; padding: 0;
+      font-family: sans-serif;
+      background: #000;
+      color: #fff;
+      overflow: hidden;
+    }
+    #library, #viewer {
+      display: none;
+      padding: 20px;
+    }
+    .pdf-entry {
+      margin-bottom: 10px;
+    }
+    .pdf-entry button {
+      font-size: 1.5rem;
+      padding: 10px;
+      margin: 5px;
+      background: #fff;
+      color: #000;
+    }
+    #focusBox {
+      position: fixed;
+      top: 40%;
+      left: 0;
+      width: 100%;
+      height: 20%;
+      border: 2px solid yellow;
+      pointer-events: none;
+      z-index: 5;
+    }
+    #pdfContainer {
+      position: relative;
+      overflow-y: scroll;
+      height: 80vh;
+      scroll-behavior: smooth;
+    }
+    .page {
+      transform-origin: center center;
+      transition: transform 0.1s;
+    }
+    #controls {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      background: #000;
+      padding: 10px;
+    }
+    #controls button {
+      font-size: 2rem;
+      padding: 15px 25px;
+    }
+  </style>
+</head>
+<body>
+  <div id="library">
+    <h1>My Sheet Music</h1>
+    <input type="file" id="fileInput" accept="application/pdf" />
+    <div id="pdfList"></div>
+  </div>
+
+  <div id="viewer">
+    <div id="focusBox"></div>
+    <div id="pdfContainer"></div>
+    <div id="controls">
+      <button onclick="scrollPDF(-100)">⬆️ Scroll Up</button>
+      <button onclick="scrollPDF(100)">⬇️ Scroll Down</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/dexie@3/dist/dexie.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    const db = new Dexie("MusicReaderDB");
+    db.version(1).stores({ pdfs: "++id,name,data" });
+
+    const library = document.getElementById("library");
+    const viewer = document.getElementById("viewer");
+    const pdfContainer = document.getElementById("pdfContainer");
+
+    async function listPDFs() {
+      const list = document.getElementById("pdfList");
+      list.innerHTML = "";
+      const pdfs = await db.pdfs.toArray();
+      pdfs.forEach(pdf => {
+        const div = document.createElement("div");
+        div.className = "pdf-entry";
+        div.innerHTML = `
+          <strong>${pdf.name}</strong><br>
+          <button onclick="openPDF(${pdf.id})">Open</button>
+          <button onclick="deletePDF(${pdf.id})">Delete</button>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    document.getElementById("fileInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const data = await file.arrayBuffer();
+        await db.pdfs.add({ name: file.name, data });
+        listPDFs();
+      }
+    });
+
+    async function openPDF(id) {
+      library.style.display = "none";
+      viewer.style.display = "block";
+      pdfContainer.innerHTML = "";
+
+      const { data } = await db.pdfs.get(id);
+      const loadingTask = pdfjsLib.getDocument({ data });
+      const pdf = await loadingTask.promise;
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        canvas.className = "page";
+
+        await page.render({ canvasContext: context, viewport }).promise;
+        pdfContainer.appendChild(canvas);
+      }
+
+      const focusBox = document.getElementById("focusBox");
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.style.transform = "scale(2.5)";
+          } else {
+            entry.target.style.transform = "scale(1)";
+          }
+        });
+      }, {
+        root: pdfContainer,
+        threshold: 0.5,
+        rootMargin: "-40% 0% -40% 0%"
+      });
+
+      document.querySelectorAll(".page").forEach(page => observer.observe(page));
+    }
+
+    async function deletePDF(id) {
+      await db.pdfs.delete(id);
+      listPDFs();
+    }
+
+    function scrollPDF(amount) {
+      pdfContainer.scrollBy({ top: amount, behavior: "smooth" });
+    }
+
+    window.addEventListener("load", () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+      }
+      library.style.display = "block";
+      listPDFs();
+    });
+  </script>
+</body>
+</html>
