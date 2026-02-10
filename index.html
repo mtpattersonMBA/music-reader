@@ -3,81 +3,92 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Manual System Cropper</title>
+  <title>Precision Cropper</title>
   <style>
+    /* 1. RESET & LAYOUT */
     body {
       margin: 0;
       background: #111;
       color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden;
+      overflow: hidden; /* Prevent body scroll, we handle it internally */
       height: 100vh;
       display: flex;
       flex-direction: column;
     }
 
-    /* SHARED UTILS */
     .hidden { display: none !important; }
-    
-    .big-btn {
-      background: #333;
-      color: white;
-      border: 1px solid #555;
-      padding: 15px 30px;
-      font-size: 1.2rem;
-      border-radius: 8px;
-      cursor: pointer;
-      margin: 5px;
-    }
-    .primary-btn { background: #006600; border-color: #008800; font-weight: bold; }
-    .danger-btn { background: #660000; border-color: #880000; }
 
-    /* 1. UPLOAD SCREEN */
+    /* 2. UPLOAD SCREEN */
     #uploadScreen {
-      padding: 30px;
-      text-align: center;
+      flex: 1;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      height: 100%;
+      padding: 20px;
+      text-align: center;
+    }
+    .big-file-btn {
+      margin-top: 20px;
+      padding: 15px;
+      background: #333;
+      border: 2px dashed #666;
+      color: #fff;
+      border-radius: 10px;
     }
 
-    /* 2. EDITOR SCREEN */
+    /* 3. EDITOR SCREEN */
     #editorScreen {
       display: flex;
       flex-direction: column;
       height: 100%;
-      position: relative;
     }
-    
-    #editorHeader {
+
+    /* Sticky Header */
+    #editorToolbar {
       height: 60px;
       background: #222;
+      border-bottom: 1px solid #444;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0 10px;
-      border-bottom: 1px solid #444;
+      padding: 0 15px;
+      z-index: 100;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
     }
 
-    #editorCanvasContainer {
-      flex: 1;
-      overflow: auto;
-      background: #333;
-      position: relative;
-      display: flex;
-      justify-content: center;
-      padding: 20px;
-      touch-action: none; /* Critical for dragging on iPad */
+    .tool-btn {
+      background: #444;
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
     }
+    .primary-btn { background: #0066cc; }
+    .success-btn { background: #008800; }
     
-    #editorCanvas {
-      box-shadow: 0 0 30px rgba(0,0,0,0.5);
-      cursor: crosshair;
+    #editorScrollArea {
+      flex: 1;
+      overflow: auto; /* Allow scrolling the PDF */
+      position: relative;
+      background: #333;
+      touch-action: pan-y; /* Allow vertical scroll, but we override for drawing */
     }
 
-    /* 3. PERFORMANCE SCREEN */
+    /* The Drawing Surface */
+    #editorCanvas {
+      display: block;
+      margin: 0 auto;
+      background: white;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      /* CRITICAL: Disables default touch actions so we can draw */
+      touch-action: none; 
+    }
+
+    /* 4. PERFORMANCE SCREEN */
     #performanceScreen {
       display: flex;
       flex-direction: column;
@@ -85,7 +96,7 @@
       background: #000;
     }
     
-    #perfCanvasContainer {
+    #slideContainer {
       flex: 1;
       display: flex;
       justify-content: center;
@@ -93,14 +104,14 @@
       padding: 10px;
     }
     
-    #perfCanvas {
+    #slideCanvas {
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
-      background: #fff;
+      background: white; /* Paper color */
     }
 
-    #controls {
+    #navControls {
       height: 15vh;
       display: flex;
       background: #111;
@@ -108,12 +119,13 @@
     }
     .nav-btn {
       flex: 1;
-      font-size: 2.5rem;
-      border: none;
+      font-size: 2rem;
+      background: #111;
       color: #fff;
-      background: #222;
+      border: none;
+      border-right: 1px solid #333;
     }
-    .nav-btn:active { background: #444; }
+    .nav-btn:active { background: #222; }
 
   </style>
 </head>
@@ -121,234 +133,254 @@
 
   <div id="uploadScreen">
     <h1>Manual System Cropper</h1>
-    <p style="color:#aaa; margin-bottom:20px;">
-      Upload a PDF, then draw boxes around the systems yourself.<br>
-      100% reliable because YOU define the music.
-    </p>
-    <input type="file" id="fileInput" accept="application/pdf" class="big-btn">
+    <p style="color:#aaa;">Upload PDF &rarr; Draw Boxes &rarr; Play</p>
+    <input type="file" id="fileInput" accept="application/pdf" class="big-file-btn">
   </div>
 
   <div id="editorScreen" class="hidden">
-    <div id="editorHeader">
-      <div>
-        <span id="pageIndicator" style="font-weight:bold; margin-right:10px;">Page 1</span>
-        <button class="big-btn danger-btn" onclick="undoLastBox()" style="font-size:0.9rem; padding:8px 15px;">↩ Undo Box</button>
-      </div>
-      <div>
-        <button class="big-btn" onclick="nextPage()">Next Page ➡️</button>
-        <button class="big-btn primary-btn" onclick="finishEditing()">Start Playing ▶</button>
+    <div id="editorToolbar">
+      <div id="pageInfo" style="font-weight:bold;">Page 1</div>
+      <div style="display:flex; gap:10px;">
+        <button class="tool-btn" onclick="undoBox()">Undo</button>
+        <button class="tool-btn primary-btn" onclick="nextPage()">Next Pg &rarr;</button>
+        <button class="tool-btn success-btn" onclick="finishEditing()">Play &#9658;</button>
       </div>
     </div>
-    
-    <div id="editorCanvasContainer">
+    <div id="editorScrollArea">
       <canvas id="editorCanvas"></canvas>
     </div>
   </div>
 
   <div id="performanceScreen" class="hidden">
-    <div id="perfCanvasContainer">
-      <canvas id="perfCanvas"></canvas>
+    <div id="slideContainer">
+      <canvas id="slideCanvas"></canvas>
     </div>
-    <div id="controls">
-      <button class="nav-btn" onclick="prevSystem()">⬅️</button>
-      <button class="nav-btn" style="background:#004400;" onclick="nextSystem()">Next ➡️</button>
+    <div id="navControls">
+      <button class="nav-btn" onclick="prevSlide()">&#8592;</button>
+      <button class="nav-btn" onclick="nextSlide()" style="background:#003300; font-weight:bold;">Next &#8594;</button>
     </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <script>
-    // SETUP
+    // --- 1. SETUP ---
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    // STATE
     let pdfDoc = null;
-    let currentPageNum = 1;
-    let scale = 1.5; // Editor view scale
-    
-    // "The Deck" - Array of { page: 1, x, y, w, h }
-    let allCroppings = []; 
-    // Temporary boxes for the current page only
-    let pageBoxes = []; 
+    let pageNum = 1;
+    let allCroppings = []; // { page: 1, x, y, w, h }
+    let currentBoxes = []; // Boxes for the current page being edited
+    let playIndex = 0;
 
-    // EDITOR DOM
+    // DOM Elements
     const editorCanvas = document.getElementById('editorCanvas');
     const ctx = editorCanvas.getContext('2d');
-    
-    // PERFORMANCE DOM
-    const perfCanvas = document.getElementById('perfCanvas');
-    const perfCtx = perfCanvas.getContext('2d');
-    let currentPlayIndex = 0;
+    const slideCanvas = document.getElementById('slideCanvas');
+    const slideCtx = slideCanvas.getContext('2d');
 
-    // --- 1. UPLOAD LOGIC ---
+    // --- 2. FILE UPLOAD ---
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if(!file) return;
 
-      const arrayBuffer = await file.arrayBuffer();
-      pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+      const buffer = await file.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument(buffer).promise;
 
       document.getElementById('uploadScreen').classList.add('hidden');
       document.getElementById('editorScreen').classList.remove('hidden');
-
+      
       loadEditorPage(1);
     });
 
-    // --- 2. EDITOR LOGIC ---
+    // --- 3. EDITOR LOGIC ---
     async function loadEditorPage(num) {
       if(num > pdfDoc.numPages) {
-        finishEditing();
+        finishEditing(); // Auto-finish if no more pages
         return;
       }
-      currentPageNum = num;
-      pageBoxes = []; // Reset boxes for new page
-      document.getElementById('pageIndicator').innerText = `Page ${num} / ${pdfDoc.numPages}`;
+      pageNum = num;
+      currentBoxes = []; // Clear boxes for new page
+      document.getElementById('pageInfo').innerText = `Page ${num} / ${pdfDoc.numPages}`;
 
       const page = await pdfDoc.getPage(num);
-      const viewport = page.getViewport({ scale: scale });
+      // Use scale 1.5 for a crisp editor view on iPad
+      const viewport = page.getViewport({ scale: 1.5 });
 
       editorCanvas.width = viewport.width;
       editorCanvas.height = viewport.height;
       
-      // Render the PDF page to canvas
+      // Render the PDF to the canvas
       await page.render({ canvasContext: ctx, viewport }).promise;
-      
-      // Save the "Clean" PDF image in memory so we can redraw it when dragging boxes
-      // We use a hidden canvas or just toDataURL for simplicity in prototype
-      editorCanvas.dataset.cleanImage = editorCanvas.toDataURL();
+
+      // Save the "Clean" background for redraws
+      editorCanvas.dataset.clean = editorCanvas.toDataURL();
     }
 
-    function redrawEditor() {
+    function redraw() {
       const img = new Image();
-      img.src = editorCanvas.dataset.cleanImage;
       img.onload = () => {
         ctx.clearRect(0,0, editorCanvas.width, editorCanvas.height);
         ctx.drawImage(img, 0, 0);
-        
-        // Draw existing boxes
-        ctx.strokeStyle = "#00ff00";
-        ctx.lineWidth = 3;
-        ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
-        
-        pageBoxes.forEach((box, i) => {
-          ctx.fillRect(box.x, box.y, box.w, box.h);
+
+        // Draw saved boxes
+        currentBoxes.forEach((box, i) => {
+          ctx.strokeStyle = '#00ff00';
+          ctx.lineWidth = 3;
           ctx.strokeRect(box.x, box.y, box.w, box.h);
+          ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+          ctx.fillRect(box.x, box.y, box.w, box.h);
           
-          // Number them
-          ctx.fillStyle = "#00ff00";
-          ctx.font = "20px Arial";
-          ctx.fillText("#"+(allCroppings.length + i + 1), box.x + 5, box.y + 25);
-          ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
+          // Draw Number
+          ctx.fillStyle = '#000';
+          ctx.fillRect(box.x, box.y, 20, 20);
+          ctx.fillStyle = '#fff';
+          ctx.font = 'bold 14px Arial';
+          ctx.fillText(i+1, box.x+5, box.y+15);
         });
 
-        // Draw current drag box
+        // Draw Active Drag Box
         if(isDragging) {
-            const w = currentX - startX;
-            const h = currentY - startY;
-            ctx.fillStyle = "rgba(255, 255, 0, 0.3)"; // Yellow for active drag
-            ctx.fillRect(startX, startY, w, h);
-            ctx.strokeRect(startX, startY, w, h);
+           const w = currentX - startX;
+           const h = currentY - startY;
+           ctx.strokeStyle = 'yellow';
+           ctx.lineWidth = 2;
+           ctx.strokeRect(startX, startY, w, h);
         }
       };
+      img.src = editorCanvas.dataset.clean;
     }
 
-    // --- MOUSE / TOUCH HANDLING FOR DRAWING ---
+    // --- 4. TOUCH & DRAWING ENGINE (The Fix) ---
     let isDragging = false;
     let startX = 0, startY = 0;
     let currentX = 0, currentY = 0;
 
+    // THE MAGIC FUNCTION: Maps screen pixels to canvas pixels accurately
     function getPos(e) {
       const rect = editorCanvas.getBoundingClientRect();
-      // Handle touch or mouse
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      
+      // Handle Touch vs Mouse
+      let cx = e.clientX;
+      let cy = e.clientY;
+      if(e.changedTouches && e.changedTouches.length > 0) {
+        cx = e.changedTouches[0].clientX;
+        cy = e.changedTouches[0].clientY;
+      }
+
+      // Calculate Scaling Ratio
+      // (Internal Resolution / Screen Size)
+      const scaleX = editorCanvas.width / rect.width;
+      const scaleY = editorCanvas.height / rect.height;
+
       return {
-        x: clientX - rect.left,
-        y: clientY - rect.top
+        x: (cx - rect.left) * scaleX,
+        y: (cy - rect.top) * scaleY
       };
     }
 
-    // Start
+    // START
     const startDraw = (e) => {
-      e.preventDefault();
+      // Allow multi-touch for zooming, only draw with 1 finger
+      if(e.touches && e.touches.length > 1) return;
+      
+      e.preventDefault(); // Stop Scroll
       const pos = getPos(e);
       startX = pos.x;
       startY = pos.y;
       isDragging = true;
     };
 
-    // Move
+    // MOVE
     const moveDraw = (e) => {
       if(!isDragging) return;
-      e.preventDefault();
+      e.preventDefault(); // Stop Scroll
       const pos = getPos(e);
       currentX = pos.x;
       currentY = pos.y;
-      redrawEditor();
+      redraw();
     };
 
-    // End
+    // END
     const endDraw = (e) => {
       if(!isDragging) return;
+      e.preventDefault();
       isDragging = false;
+
+      // Recalc final pos
+      const pos = getPos(e);
+      currentX = pos.x;
+      currentY = pos.y;
       
       const w = currentX - startX;
       const h = currentY - startY;
 
-      // Ignore tiny accidental clicks (< 20px)
+      // Only add if box is bigger than 20x20px (prevents accidental dots)
       if(Math.abs(w) > 20 && Math.abs(h) > 20) {
-        // Normalize (handle dragging backwards)
-        const realX = w < 0 ? currentX : startX;
-        const realY = h < 0 ? currentY : startY;
-        const realW = Math.abs(w);
-        const realH = Math.abs(h);
+        // Normalize negatives (dragging up/left)
+        const finalX = w < 0 ? currentX : startX;
+        const finalY = h < 0 ? currentY : startY;
+        const finalW = Math.abs(w);
+        const finalH = Math.abs(h);
 
-        pageBoxes.push({ x: realX, y: realY, w: realW, h: realH });
+        currentBoxes.push({ x: finalX, y: finalY, w: finalW, h: finalH });
       }
-      redrawEditor();
+      redraw();
     };
+    
+    // Double Tap to Delete Logic
+    editorCanvas.addEventListener('dblclick', (e) => {
+       const pos = getPos(e);
+       // Find if we clicked inside a box (iterate backwards to get top-most)
+       for(let i = currentBoxes.length - 1; i >= 0; i--) {
+         const b = currentBoxes[i];
+         if(pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h) {
+           currentBoxes.splice(i, 1); // Remove it
+           redraw();
+           break;
+         }
+       }
+    });
 
-    // Events
     editorCanvas.addEventListener('mousedown', startDraw);
     editorCanvas.addEventListener('mousemove', moveDraw);
     editorCanvas.addEventListener('mouseup', endDraw);
     
-    editorCanvas.addEventListener('touchstart', startDraw);
-    editorCanvas.addEventListener('touchmove', moveDraw);
-    editorCanvas.addEventListener('touchend', endDraw);
+    editorCanvas.addEventListener('touchstart', startDraw, {passive: false});
+    editorCanvas.addEventListener('touchmove', moveDraw, {passive: false});
+    editorCanvas.addEventListener('touchend', endDraw, {passive: false});
 
 
-    // --- EDITOR BUTTONS ---
-    function undoLastBox() {
-      pageBoxes.pop();
-      redrawEditor();
+    // --- 5. BUTTON ACTIONS ---
+    function undoBox() {
+      currentBoxes.pop();
+      redraw();
     }
 
     function nextPage() {
-      // Commit current page boxes to the Master List
-      // We need to store them with the page number!
-      pageBoxes.forEach(b => {
+      // 1. Save current boxes to Master List
+      currentBoxes.forEach(b => {
         allCroppings.push({
-          pageNum: currentPageNum,
+          pageNum: pageNum,
           x: b.x, y: b.y, w: b.w, h: b.h
         });
       });
-
-      // Move on
-      loadEditorPage(currentPageNum + 1);
+      
+      // 2. Load next
+      loadEditorPage(pageNum + 1);
     }
 
     function finishEditing() {
-      // Commit any boxes on the current page before finishing
-      pageBoxes.forEach(b => {
+      // Save any current boxes first
+      currentBoxes.forEach(b => {
         allCroppings.push({
-          pageNum: currentPageNum,
+          pageNum: pageNum,
           x: b.x, y: b.y, w: b.w, h: b.h
         });
       });
 
       if(allCroppings.length === 0) {
-        alert("You didn't draw any boxes!");
+        alert("No boxes drawn!");
         return;
       }
 
@@ -356,67 +388,58 @@
       document.getElementById('editorScreen').classList.add('hidden');
       document.getElementById('performanceScreen').classList.remove('hidden');
       
-      currentPlayIndex = 0;
-      renderPerformanceSystem();
+      playIndex = 0;
+      renderSlide();
     }
 
-
-    // --- 3. PERFORMANCE LOGIC ---
-    async function renderPerformanceSystem() {
-      const crop = allCroppings[currentPlayIndex];
+    // --- 6. PLAYER ENGINE ---
+    async function renderSlide() {
+      const crop = allCroppings[playIndex];
       
-      // We need to re-render the PDF page to get high-res crop
-      // (Using the editor canvas image is blurry)
+      // We need to fetch the page again to render the clean crop
       const page = await pdfDoc.getPage(crop.pageNum);
-      
-      // Use the same scale we cropped with to match coordinates
-      const viewport = page.getViewport({ scale: scale });
-      
-      // Create temp canvas to render full page
+      const viewport = page.getViewport({ scale: 1.5 }); // Match editor scale
+
+      // Temporary canvas to hold the full page
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = viewport.width;
       tempCanvas.height = viewport.height;
       const tempCtx = tempCanvas.getContext('2d');
       
       await page.render({ canvasContext: tempCtx, viewport }).promise;
+
+      // Draw just the cropped region to the slide canvas
+      slideCanvas.width = crop.w;
+      slideCanvas.height = crop.h;
       
-      // Now draw just the crop to the performance canvas
-      perfCanvas.width = crop.w;
-      perfCanvas.height = crop.h;
+      slideCtx.fillStyle = "white";
+      slideCtx.fillRect(0,0, crop.w, crop.h);
       
-      perfCtx.fillStyle = "white";
-      perfCtx.fillRect(0,0, crop.w, crop.h);
-      
-      perfCtx.drawImage(
-        tempCanvas,
-        crop.x, crop.y, crop.w, crop.h, // Source
-        0, 0, crop.w, crop.h // Dest
+      slideCtx.drawImage(
+        tempCanvas, 
+        crop.x, crop.y, crop.w, crop.h, // Source (x,y,w,h)
+        0, 0, crop.w, crop.h            // Dest (x,y,w,h)
       );
     }
 
-    function nextSystem() {
-      if(currentPlayIndex < allCroppings.length - 1) {
-        currentPlayIndex++;
-        renderPerformanceSystem();
+    function nextSlide() {
+      if(playIndex < allCroppings.length - 1) {
+        playIndex++;
+        renderSlide();
       }
     }
     
-    function prevSystem() {
-      if(currentPlayIndex > 0) {
-        currentPlayIndex--;
-        renderPerformanceSystem();
+    function prevSlide() {
+      if(playIndex > 0) {
+        playIndex--;
+        renderSlide();
       }
     }
-
-    // Keyboard / Click nav
-    window.addEventListener('keydown', (e) => {
-      if(e.key === "ArrowRight" || e.key === " ") nextSystem();
-      if(e.key === "ArrowLeft") prevSystem();
-    });
     
+    // Tap Zones (Left/Right)
     document.getElementById('performanceScreen').addEventListener('click', (e) => {
-      if(e.clientX > window.innerWidth / 2) nextSystem();
-      else prevSystem();
+       if(e.clientX > window.innerWidth / 2) nextSlide();
+       else prevSlide();
     });
 
   </script>
