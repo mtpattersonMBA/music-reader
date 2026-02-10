@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Accolade Hunter</title>
+  <title>Accolade Hunter v2</title>
   <style>
     body {
       margin: 0;
@@ -109,9 +109,10 @@
 <body>
 
   <div id="uploadScreen">
-    <h1>Choral Accolade Hunter</h1>
+    <h1>Accolade Hunter v2</h1>
     <p style="color:#aaa; max-width:400px; line-height:1.5;">
-      I will scan the <strong>left margin</strong> of your PDF looking for the vertical bracket (Accolade) to group systems automatically.
+      Scanning the left <strong>25%</strong> of the page.<br>
+      Ignoring text shorter than 100px (like footers).
     </p>
     <input type="file" id="fileInput" accept="application/pdf" class="big-btn">
   </div>
@@ -194,17 +195,13 @@
       
       await page.render({ canvasContext: tempCtx, viewport }).promise;
 
-      // GET PIXEL DATA
       const width = tempCanvas.width;
       const height = tempCanvas.height;
       const imageData = tempCtx.getImageData(0, 0, width, height).data;
 
-      // STRATEGY: Scan only the LEFT 15% of the page.
-      // We look for rows that have "ink" in the margin.
-      // A continuous run of rows with ink = ONE BRACKET = ONE SYSTEM.
-      
-      const MARGIN_RIGHT_BOUNDARY = Math.floor(width * 0.15); // Scan first 15% width
-      const INK_THRESHOLD = 3; // Need at least 3 dark pixels in the margin to count as 'bracket'
+      // STRATEGY v2: Scan wider (25%) but enforce strict height requirements.
+      const MARGIN_RIGHT_BOUNDARY = Math.floor(width * 0.25); 
+      const INK_THRESHOLD = 3; 
       
       let rowHasBracket = new Array(height).fill(false);
       
@@ -225,15 +222,13 @@
       }
 
       // GROUPING LOGIC
-      // We now have an array [true, true, true, false, false...] representing the bracket
-      // 'true' means we are inside a bracket height.
-      
       let inSystem = false;
       let startY = 0;
       
-      // Smoothing: Ignore tiny gaps (scanned broken lines) of < 10px
+      // Increased Gap Tolerance: 
+      // If the bracket line is faint or broken, we allow a bigger gap before giving up.
       let gapCounter = 0; 
-      const GAP_TOLERANCE = 10; 
+      const GAP_TOLERANCE = 15; 
 
       for (let y = 0; y < height; y++) {
         if (rowHasBracket[y]) {
@@ -251,8 +246,10 @@
               inSystem = false;
               let endY = y - gapCounter;
               
-              // Filter out noise (must be > 50px tall to be a system)
-              if ((endY - startY) > 50) {
+              // FILTER: IGNORE SHORT NOISE (FOOTERS)
+              // Only accept if system is > 100px tall. 
+              // A real choral system is usually 300px+ at this resolution.
+              if ((endY - startY) > 100) {
                 allSystems.push({
                   sourceCanvas: tempCanvas,
                   y: Math.max(0, startY - 20), // Add padding
@@ -268,7 +265,7 @@
       // Capture last system if page ends
       if (inSystem) {
          let endY = height;
-         if ((endY - startY) > 50) {
+         if ((endY - startY) > 100) {
             allSystems.push({
                sourceCanvas: tempCanvas,
                y: Math.max(0, startY - 20),
