@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>The Calibrated Slicer</title>
+  <title>Hybrid Smart-Slicer</title>
   <style>
     body {
       margin: 0;
@@ -16,7 +16,6 @@
       flex-direction: column;
     }
 
-    /* UPLOAD SCREEN */
     #uploadScreen {
       padding: 30px;
       text-align: center;
@@ -26,31 +25,6 @@
       align-items: center;
       height: 100%;
       background: #111;
-    }
-
-    .control-group {
-      margin: 20px 0;
-      width: 80%;
-      max-width: 400px;
-      text-align: left;
-      background: #222;
-      padding: 20px;
-      border-radius: 10px;
-    }
-
-    label {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      font-size: 1.1rem;
-      color: #fff;
-    }
-    
-    input[type="range"] {
-      width: 100%;
-      height: 30px;
-      accent-color: #00ff00;
-      cursor: pointer;
     }
 
     .big-btn {
@@ -64,7 +38,6 @@
       cursor: pointer;
     }
 
-    /* PERFORMANCE STAGE */
     #performanceMode {
       display: none;
       flex: 1;
@@ -88,10 +61,8 @@
       max-height: 100%;
       object-fit: contain; 
       background: #fff;
-      box-shadow: 0 0 20px rgba(255,255,255,0.1);
     }
 
-    /* NAVIGATION BUTTONS */
     #controls {
       height: 20vh;
       display: flex;
@@ -103,13 +74,10 @@
       font-size: 2.5rem;
       border: none;
       color: #fff;
-      active: opacity: 0.7;
-      cursor: pointer;
     }
-    #prevBtn { background: #1a1a1a; border-right: 1px solid #333; }
+    #prevBtn { background: #1a1a1a; }
     #nextBtn { background: #004400; font-weight: bold; }
 
-    /* INFO OVERLAY */
     #sysInfo {
       position: absolute;
       top: 10px; left: 10px;
@@ -134,35 +102,23 @@
 <body>
 
   <div id="uploadScreen">
-    <h1>The Calibrated Slicer</h1>
-    
-    <div class="control-group">
-      <label>
-        <span>Gap Tolerance</span>
-        <span id="valDisplay" style="color:#00ff00">50px</span>
-      </label>
-      <input type="range" id="gapSlider" min="20" max="150" value="50" step="5" oninput="updateLabel(this.value)">
-      <p style="color:#aaa; font-size:0.9rem; margin-top:10px;">
-        <strong>Slide Left:</strong> If seeing whole pages (System gap is small).<br>
-        <strong>Slide Right:</strong> If seeing single staves (Part gap is big).
-      </p>
-    </div>
-
+    <h1>Hybrid Smart-Slicer</h1>
+    <p style="color:#aaa; max-width:400px; line-height:1.5;">
+      Combines "Vertical Spine" detection (for big systems) with "Ink Density" (for solos/unison).
+    </p>
     <input type="file" id="fileInput" accept="application/pdf" class="big-btn">
   </div>
 
   <div id="loader">
-    <div style="font-size: 2rem; margin-bottom: 20px;">Analyzing...</div>
-    <div style="color: #aaa;">Scanning center & bridging gaps</div>
+    <div style="font-size: 2rem; margin-bottom: 20px;">Thinking...</div>
+    <div style="color: #aaa;">Scanning spines & bridging gaps</div>
   </div>
 
   <div id="performanceMode">
     <div id="sysInfo">System <span id="sysNum">1</span></div>
-    
     <div id="canvasContainer">
       <canvas id="systemCanvas"></canvas>
     </div>
-    
     <div id="controls">
       <button id="prevBtn" class="nav-btn" onclick="prevSystem()">⬅️</button>
       <button id="nextBtn" class="nav-btn" onclick="nextSystem()">Next ➡️</button>
@@ -172,7 +128,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <script>
-    // SETUP
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     
     let allSystems = [];
@@ -180,18 +135,9 @@
     const canvas = document.getElementById('systemCanvas');
     const ctx = canvas.getContext('2d');
 
-    // UI UPDATES
-    function updateLabel(val) {
-      document.getElementById('valDisplay').innerText = val + "px";
-    }
-
-    // FILE HANDLING
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-
-      const gapTolerance = parseInt(document.getElementById('gapSlider').value);
-      
       document.getElementById('loader').style.display = 'flex';
       
       try {
@@ -199,13 +145,12 @@
         const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
         
         allSystems = []; 
-        
         for (let p = 1; p <= pdf.numPages; p++) {
-          await processPage(pdf, p, gapTolerance);
+          await processPage(pdf, p);
         }
 
         if (allSystems.length === 0) {
-          alert("No music found! Try adjusting the slider.");
+          alert("No music found. Try a different PDF.");
           location.reload();
           return;
         }
@@ -213,104 +158,141 @@
         document.getElementById('loader').style.display = 'none';
         document.getElementById('uploadScreen').style.display = 'none';
         document.getElementById('performanceMode').style.display = 'flex';
-        
         currentSystemIndex = 0;
         renderSystem();
-
       } catch (err) {
         console.error(err);
         alert("Error: " + err.message);
-        document.getElementById('loader').style.display = 'none';
       }
     });
 
-    // THE CALIBRATED "SQUINT" ALGORITHM
-    async function processPage(pdf, pageNum, gapTolerance) {
+    async function processPage(pdf, pageNum) {
       const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 2.0 }); 
+      const viewport = page.getViewport({ scale: 2.0 });
       
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = viewport.width;
       tempCanvas.height = viewport.height;
       const tempCtx = tempCanvas.getContext('2d');
-      
       await page.render({ canvasContext: tempCtx, viewport }).promise;
 
       const width = tempCanvas.width;
       const height = tempCanvas.height;
       const imageData = tempCtx.getImageData(0, 0, width, height).data;
 
-      // STEP 1: Scan Center (25% - 75%)
-      const START_X = Math.floor(width * 0.25);
-      const END_X = Math.floor(width * 0.75);
+      // --- PHASE 1: MAPPING THE "SPINES" (Vertical Connectors) ---
+      // We look for vertical runs > 60px. These force connection.
+      let rowHasSpine = new Array(height).fill(false);
+      const MIN_SPINE_HEIGHT = 60; // Lowered to catch smaller brackets too
+
+      for (let x = 0; x < width; x += 5) {
+        let currentRun = 0;
+        for (let y = 0; y < height; y++) {
+          const i = (y * width + x) * 4;
+          if (imageData[i] < 200) {
+             currentRun++;
+          } else {
+             if (currentRun > MIN_SPINE_HEIGHT) {
+                for (let k = y - currentRun; k < y; k++) rowHasSpine[k] = true;
+             }
+             currentRun = 0;
+          }
+        }
+        if (currentRun > MIN_SPINE_HEIGHT) {
+           for (let k = height - currentRun; k < height; k++) rowHasSpine[k] = true;
+        }
+      }
+
+      // --- PHASE 2: MAPPING THE "INK" (Horizontal Content) ---
+      // We look for any row that has significant dark pixels.
+      let rowHasInk = new Array(height).fill(false);
       
-      let rowDensity = new Array(height).fill(0);
+      // Scan middle 50% of page width
+      const startX = Math.floor(width * 0.25);
+      const endX = Math.floor(width * 0.75);
       
       for (let y = 0; y < height; y++) {
         let darkPixels = 0;
-        for (let x = START_X; x < END_X; x += 5) { 
-          const i = (y * width + x) * 4;
-          if (imageData[i] < 200) darkPixels++; 
+        for (let x = startX; x < endX; x += 5) {
+           const i = (y * width + x) * 4;
+           if (imageData[i] < 200) darkPixels++;
         }
-        rowDensity[y] = darkPixels;
+        if (darkPixels > 5) rowHasInk[y] = true;
       }
 
-      // STEP 2: Gap Logic with Slider Value
-      const MIN_INK = 5; 
-
+      // --- PHASE 3: THE HYBRID MERGE ---
       let inSystem = false;
       let startY = 0;
-      let whiteSpaceCounter = 0;
+      let gapCounter = 0;
+      
+      // SOLO GAP TOLERANCE: If no spine, we allow a small gap (e.g. 50px)
+      // before declaring the system over.
+      const MAX_SOLO_GAP = 50; 
 
       for (let y = 0; y < height; y++) {
-        const hasInk = rowDensity[y] > MIN_INK;
+        
+        // CONDITION A: We see a Spine (Strongest Signal)
+        // CONDITION B: We see Ink (Weaker Signal)
+        const isSpine = rowHasSpine[y];
+        const isInk = rowHasInk[y];
+        
+        const isActive = isSpine || isInk;
 
-        if (hasInk) {
+        if (isActive) {
           if (!inSystem) {
             inSystem = true;
             startY = y;
           }
-          whiteSpaceCounter = 0; 
+          // We are in active territory, so reset gap counter
+          gapCounter = 0;
+          
         } else {
-          // No ink here
+          // We are in white space
           if (inSystem) {
-            whiteSpaceCounter++;
             
-            // Only cut if gap > gapTolerance (Slider Value)
-            if (whiteSpaceCounter > gapTolerance) {
-              
-              inSystem = false;
-              let endY = y - whiteSpaceCounter;
-              
-              // Validation: Block must be > 60px tall to be a system
-              // (Slightly reduced min-height to catch smaller systems if needed)
-              if ((endY - startY) > 60) {
-                allSystems.push({
-                  sourceCanvas: tempCanvas,
-                  y: Math.max(0, startY - 20), // Padding
-                  h: (endY - startY) + 40,
-                  w: width
-                });
-              }
+            // SPECIAL CHECK:
+            // If the PREVIOUS active area was a Spine, we are stricter about closing it?
+            // Actually, simpler:
+            // If we hit white space, we increment counter.
+            // But if we are currently "inside" a bracket physically, 'rowHasSpine[y]' would be true.
+            // Since it is FALSE here, we are truly in a gap (either between staves or systems).
+            
+            gapCounter++;
+            
+            if (gapCounter > MAX_SOLO_GAP) {
+               // We have exceeded the gap limit.
+               // CLOSE THE SYSTEM.
+               inSystem = false;
+               let endY = y - gapCounter;
+               
+               // Validation: Must be > 60px tall
+               if ((endY - startY) > 60) {
+                 allSystems.push({
+                   sourceCanvas: tempCanvas,
+                   y: Math.max(0, startY - 30),
+                   h: (endY - startY) + 60,
+                   w: width
+                 });
+               }
             }
           }
         }
       }
       
+      // Catch last
       if (inSystem) {
          let endY = height;
          if ((endY - startY) > 60) {
             allSystems.push({
                sourceCanvas: tempCanvas,
-               y: Math.max(0, startY - 20),
-               h: (endY - startY) + 40,
+               y: Math.max(0, startY - 30),
+               h: (endY - startY) + 60,
                w: width
             });
          }
       }
     }
 
-    // RENDERER
     function renderSystem() {
       if (!allSystems[currentSystemIndex]) return;
       const sys = allSystems[currentSystemIndex];
@@ -318,14 +300,9 @@
 
       canvas.width = sys.w;
       canvas.height = sys.h;
-
       ctx.fillStyle = "white";
       ctx.fillRect(0,0, canvas.width, canvas.height);
-      ctx.drawImage(
-        sys.sourceCanvas,
-        0, sys.y, sys.w, sys.h, 
-        0, 0, sys.w, sys.h
-      );
+      ctx.drawImage(sys.sourceCanvas, 0, sys.y, sys.w, sys.h, 0, 0, sys.w, sys.h);
     }
 
     function nextSystem() {
@@ -345,7 +322,7 @@
       if (e.key === "ArrowRight" || e.key === " ") nextSystem();
       if (e.key === "ArrowLeft") prevSystem();
     });
-
+    
     document.getElementById('canvasContainer').addEventListener('click', (e) => {
       if(e.clientX > window.innerWidth / 2) nextSystem();
       else prevSystem();
