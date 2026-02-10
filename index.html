@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>The "Squint" Slicer</title>
+  <title>The Calibrated Slicer</title>
   <style>
     body {
       margin: 0;
@@ -26,6 +26,31 @@
       align-items: center;
       height: 100%;
       background: #111;
+    }
+
+    .control-group {
+      margin: 20px 0;
+      width: 80%;
+      max-width: 400px;
+      text-align: left;
+      background: #222;
+      padding: 20px;
+      border-radius: 10px;
+    }
+
+    label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+      color: #fff;
+    }
+    
+    input[type="range"] {
+      width: 100%;
+      height: 30px;
+      accent-color: #00ff00;
+      cursor: pointer;
     }
 
     .big-btn {
@@ -109,16 +134,26 @@
 <body>
 
   <div id="uploadScreen">
-    <h1>The "Squint" Slicer</h1>
-    <p style="color:#aaa; max-width:400px; line-height:1.5;">
-      Uses "Gap Bridging" logic to ignore the white space between Soprano/Alto/Tenor/Bass and keep the system whole.
-    </p>
+    <h1>The Calibrated Slicer</h1>
+    
+    <div class="control-group">
+      <label>
+        <span>Gap Tolerance</span>
+        <span id="valDisplay" style="color:#00ff00">50px</span>
+      </label>
+      <input type="range" id="gapSlider" min="20" max="150" value="50" step="5" oninput="updateLabel(this.value)">
+      <p style="color:#aaa; font-size:0.9rem; margin-top:10px;">
+        <strong>Slide Left:</strong> If seeing whole pages (System gap is small).<br>
+        <strong>Slide Right:</strong> If seeing single staves (Part gap is big).
+      </p>
+    </div>
+
     <input type="file" id="fileInput" accept="application/pdf" class="big-btn">
   </div>
 
   <div id="loader">
-    <div style="font-size: 2rem; margin-bottom: 20px;">Analyzing Density...</div>
-    <div style="color: #aaa;">Bridging gaps & finding blocks</div>
+    <div style="font-size: 2rem; margin-bottom: 20px;">Analyzing...</div>
+    <div style="color: #aaa;">Scanning center & bridging gaps</div>
   </div>
 
   <div id="performanceMode">
@@ -145,11 +180,18 @@
     const canvas = document.getElementById('systemCanvas');
     const ctx = canvas.getContext('2d');
 
+    // UI UPDATES
+    function updateLabel(val) {
+      document.getElementById('valDisplay').innerText = val + "px";
+    }
+
     // FILE HANDLING
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
+      const gapTolerance = parseInt(document.getElementById('gapSlider').value);
+      
       document.getElementById('loader').style.display = 'flex';
       
       try {
@@ -159,11 +201,11 @@
         allSystems = []; 
         
         for (let p = 1; p <= pdf.numPages; p++) {
-          await processPage(pdf, p);
+          await processPage(pdf, p, gapTolerance);
         }
 
         if (allSystems.length === 0) {
-          alert("No music found! Try a clearer PDF.");
+          alert("No music found! Try adjusting the slider.");
           location.reload();
           return;
         }
@@ -182,10 +224,9 @@
       }
     });
 
-    // THE "SQUINT" ALGORITHM
-    async function processPage(pdf, pageNum) {
+    // THE CALIBRATED "SQUINT" ALGORITHM
+    async function processPage(pdf, pageNum, gapTolerance) {
       const page = await pdf.getPage(pageNum);
-      // Use scale 2.0 to get enough pixel data to be accurate
       const viewport = page.getViewport({ scale: 2.0 }); 
       
       const tempCanvas = document.createElement('canvas');
@@ -199,8 +240,7 @@
       const height = tempCanvas.height;
       const imageData = tempCtx.getImageData(0, 0, width, height).data;
 
-      // STEP 1: Scan the CENTER of the page (Width 25% to 75%)
-      // This avoids margin notes, hole punches, and scanning artifacts
+      // STEP 1: Scan Center (25% - 75%)
       const START_X = Math.floor(width * 0.25);
       const END_X = Math.floor(width * 0.75);
       
@@ -208,29 +248,21 @@
       
       for (let y = 0; y < height; y++) {
         let darkPixels = 0;
-        for (let x = START_X; x < END_X; x += 5) { // Sample every 5th pixel
+        for (let x = START_X; x < END_X; x += 5) { 
           const i = (y * width + x) * 4;
-          if (imageData[i] < 200) darkPixels++; // Count ink
+          if (imageData[i] < 200) darkPixels++; 
         }
         rowDensity[y] = darkPixels;
       }
 
-      // STEP 2: The "Gap Bridge" Logic
-      // We iterate through the rows. If we hit whitespace, we peek ahead.
-      // If the whitespace is SMALLER than our bridge limit, we pretend it's ink.
-      
-      // BRIDGE LIMIT: 120 pixels (at 2.0 scale)
-      // This is large enough to jump over lyrics and stave gaps,
-      // but small enough to stop at the System Break.
-      const BRIDGE_LIMIT = 120; 
-      const MIN_INK = 5; // Sensitivity to ink
+      // STEP 2: Gap Logic with Slider Value
+      const MIN_INK = 5; 
 
       let inSystem = false;
       let startY = 0;
       let whiteSpaceCounter = 0;
 
       for (let y = 0; y < height; y++) {
-        // Is there ink on this row?
         const hasInk = rowDensity[y] > MIN_INK;
 
         if (hasInk) {
@@ -238,29 +270,25 @@
             inSystem = true;
             startY = y;
           }
-          whiteSpaceCounter = 0; // Reset gap counter
+          whiteSpaceCounter = 0; 
         } else {
           // No ink here
           if (inSystem) {
             whiteSpaceCounter++;
             
-            // HERE IS THE MAGIC:
-            // Only cut the system if the gap exceeds the BRIDGE_LIMIT
-            if (whiteSpaceCounter > BRIDGE_LIMIT) {
+            // Only cut if gap > gapTolerance (Slider Value)
+            if (whiteSpaceCounter > gapTolerance) {
               
-              // The system officially ended 'BRIDGE_LIMIT' pixels ago
               inSystem = false;
               let endY = y - whiteSpaceCounter;
               
-              // Validation: Is this block tall enough to be a system?
-              // (Must be > 100px tall to ignore headers/footers)
-              if ((endY - startY) > 100) {
-                
-                // Save the system
+              // Validation: Block must be > 60px tall to be a system
+              // (Slightly reduced min-height to catch smaller systems if needed)
+              if ((endY - startY) > 60) {
                 allSystems.push({
                   sourceCanvas: tempCanvas,
-                  y: Math.max(0, startY - 30), // Add padding top
-                  h: (endY - startY) + 60,     // Add padding bottom
+                  y: Math.max(0, startY - 20), // Padding
+                  h: (endY - startY) + 40,
                   w: width
                 });
               }
@@ -269,14 +297,13 @@
         }
       }
       
-      // Capture the last system on the page
       if (inSystem) {
          let endY = height;
-         if ((endY - startY) > 100) {
+         if ((endY - startY) > 60) {
             allSystems.push({
                sourceCanvas: tempCanvas,
-               y: Math.max(0, startY - 30),
-               h: (endY - startY) + 60,
+               y: Math.max(0, startY - 20),
+               h: (endY - startY) + 40,
                w: width
             });
          }
