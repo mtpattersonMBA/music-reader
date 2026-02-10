@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>System Slicer PWA</title>
+  <title>Accolade Hunter</title>
   <style>
     body {
       margin: 0;
       background: #000;
       color: #fff;
-      font-family: system-ui, -apple-system, sans-serif;
-      overflow: hidden; /* No scrolling allowed */
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -18,82 +18,115 @@
 
     /* UPLOAD SCREEN */
     #uploadScreen {
-      padding: 40px;
+      padding: 30px;
       text-align: center;
       display: flex;
       flex-direction: column;
       justify-content: center;
+      align-items: center;
       height: 100%;
+      background: #111;
     }
+
     .big-btn {
       background: #333;
       color: white;
       border: 2px solid #555;
-      padding: 20px;
+      padding: 20px 40px;
       font-size: 1.5rem;
       border-radius: 15px;
-      margin: 20px 0;
+      margin-top: 20px;
+      cursor: pointer;
     }
 
-    /* THE STAGE */
+    /* PERFORMANCE STAGE */
     #performanceMode {
       display: none;
       flex: 1;
       position: relative;
       flex-direction: column;
+      height: 100%;
     }
 
-    #systemCanvas {
-      width: 100%;
-      height: 70vh; /* Takes up most of the screen */
-      object-fit: contain; /* Ensures the system is fully visible */
-      background: #fff; /* White background for the music itself */
-      border-bottom: 5px solid #333;
+    #canvasContainer {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #000;
+      overflow: hidden;
+      padding: 10px;
     }
 
-    /* CONTROLS */
+    canvas {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain; 
+      background: #fff;
+      box-shadow: 0 0 20px rgba(255,255,255,0.1);
+    }
+
+    /* NAVIGATION BUTTONS */
     #controls {
-      height: 30vh;
+      height: 20vh;
       display: flex;
       background: #111;
+      border-top: 1px solid #333;
     }
     .nav-btn {
       flex: 1;
-      font-size: 3rem;
-      background: #222;
+      font-size: 2.5rem;
+      border: none;
       color: #fff;
-      border: 1px solid #444;
-      active: background: #444;
+      active: opacity: 0.7;
+      cursor: pointer;
     }
-    #prevBtn { background: #1a1a1a; border-right: 1px solid #000; }
-    #nextBtn { background: #004400; font-weight: bold; } /* Green tint for Next */
+    #prevBtn { background: #1a1a1a; border-right: 1px solid #333; }
+    #nextBtn { background: #004400; font-weight: bold; }
 
-    /* LOADING OVERLAY */
+    /* INFO OVERLAY */
+    #sysInfo {
+      position: absolute;
+      top: 10px; left: 10px;
+      background: rgba(0,0,0,0.5);
+      padding: 5px 10px;
+      border-radius: 5px;
+      pointer-events: none;
+    }
+
     #loader {
       display: none;
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.9);
-      color: white;
+      background: rgba(0,0,0,0.95);
       z-index: 100;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-size: 2rem;
     }
   </style>
 </head>
 <body>
 
   <div id="uploadScreen">
-    <h1>Music Slicer</h1>
-    <p>Upload a PDF. I will cut it into systems and show them one by one.</p>
+    <h1>Choral Accolade Hunter</h1>
+    <p style="color:#aaa; max-width:400px; line-height:1.5;">
+      I will scan the <strong>left margin</strong> of your PDF looking for the vertical bracket (Accolade) to group systems automatically.
+    </p>
     <input type="file" id="fileInput" accept="application/pdf" class="big-btn">
   </div>
 
-  <div id="loader">Processing Score...<br><span style="font-size:1rem; color:#aaa">Scanning for staves</span></div>
+  <div id="loader">
+    <div style="font-size: 2rem; margin-bottom: 20px;">Scanning Margins...</div>
+    <div style="color: #aaa;">Detecting vertical brackets</div>
+  </div>
 
   <div id="performanceMode">
-    <canvas id="systemCanvas"></canvas>
+    <div id="sysInfo">System <span id="sysNum">1</span></div>
+    
+    <div id="canvasContainer">
+      <canvas id="systemCanvas"></canvas>
+    </div>
     
     <div id="controls">
       <button id="prevBtn" class="nav-btn" onclick="prevSystem()">⬅️</button>
@@ -104,47 +137,56 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <script>
-    // CONFIG
+    // SETUP
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     
-    let allSystems = []; // Will hold {canvas, x, y, w, h} for every system found
+    let allSystems = [];
     let currentSystemIndex = 0;
     const canvas = document.getElementById('systemCanvas');
     const ctx = canvas.getContext('2d');
 
-    // 1. FILE HANDLING
+    // FILE HANDLING
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
       document.getElementById('loader').style.display = 'flex';
       
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-      
-      allSystems = []; // Reset
-      
-      // Process every page
-      for (let p = 1; p <= pdf.numPages; p++) {
-        await processPage(pdf, p);
-      }
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+        
+        allSystems = []; 
+        
+        for (let p = 1; p <= pdf.numPages; p++) {
+          await processPage(pdf, p);
+        }
 
-      // Done
-      document.getElementById('loader').style.display = 'none';
-      document.getElementById('uploadScreen').style.display = 'none';
-      document.getElementById('performanceMode').style.display = 'flex';
-      
-      // Show first system
-      currentSystemIndex = 0;
-      renderSystem();
+        if (allSystems.length === 0) {
+          alert("No brackets found! Is this a choral score?");
+          location.reload();
+          return;
+        }
+
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('uploadScreen').style.display = 'none';
+        document.getElementById('performanceMode').style.display = 'flex';
+        
+        currentSystemIndex = 0;
+        renderSystem();
+
+      } catch (err) {
+        console.error(err);
+        alert("Error: " + err.message);
+        document.getElementById('loader').style.display = 'none';
+      }
     });
 
-    // 2. THE ALGORITHM (The "Slicer")
+    // THE ACCOLADE HUNTER ALGORITHM
     async function processPage(pdf, pageNum) {
       const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 2.0 }); // High res for scanning
+      const viewport = page.getViewport({ scale: 2.0 }); 
       
-      // Create a temporary canvas to draw the full page
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = viewport.width;
       tempCanvas.height = viewport.height;
@@ -157,61 +199,64 @@
       const height = tempCanvas.height;
       const imageData = tempCtx.getImageData(0, 0, width, height).data;
 
-      // SCAN LINES
-      // We project the page onto the Y-axis (calculate 'darkness' of each row)
-      let rowDensities = new Array(height).fill(0);
+      // STRATEGY: Scan only the LEFT 15% of the page.
+      // We look for rows that have "ink" in the margin.
+      // A continuous run of rows with ink = ONE BRACKET = ONE SYSTEM.
+      
+      const MARGIN_RIGHT_BOUNDARY = Math.floor(width * 0.15); // Scan first 15% width
+      const INK_THRESHOLD = 3; // Need at least 3 dark pixels in the margin to count as 'bracket'
+      
+      let rowHasBracket = new Array(height).fill(false);
       
       for (let y = 0; y < height; y++) {
-        // Sample every 10th pixel to save CPU
         let darkPixels = 0;
-        for (let x = 0; x < width; x += 10) {
+        // Optimization: Check every 2nd pixel in margin
+        for (let x = 0; x < MARGIN_RIGHT_BOUNDARY; x += 2) {
           const i = (y * width + x) * 4;
-          const r = imageData[i];
-          const g = imageData[i+1];
-          const b = imageData[i+2];
-          // If pixel is not white (assuming white background)
-          if (r < 200 || g < 200 || b < 200) {
-            darkPixels++;
+          // If dark
+          if (imageData[i] < 200) {
+             darkPixels++;
+             if(darkPixels >= INK_THRESHOLD) {
+               rowHasBracket[y] = true;
+               break; // Found ink, move to next row
+             }
           }
         }
-        rowDensities[y] = darkPixels;
       }
 
-      // IDENTIFY SYSTEMS
-      // We look for clusters of "dark rows" separated by "light rows"
-      const THRESHOLD = 5; // Min dark pixels to count as 'content'
-      const MIN_SYSTEM_HEIGHT = 50; // Ignore tiny specks
-      const GAP_TOLERANCE = 30; // How much white space allowed *inside* a system (e.g. between treble/bass clef)
-
-      let systems = [];
+      // GROUPING LOGIC
+      // We now have an array [true, true, true, false, false...] representing the bracket
+      // 'true' means we are inside a bracket height.
+      
       let inSystem = false;
       let startY = 0;
-      let whiteSpaceCounter = 0;
+      
+      // Smoothing: Ignore tiny gaps (scanned broken lines) of < 10px
+      let gapCounter = 0; 
+      const GAP_TOLERANCE = 10; 
 
       for (let y = 0; y < height; y++) {
-        const isContent = rowDensities[y] > THRESHOLD;
-
-        if (isContent) {
+        if (rowHasBracket[y]) {
           if (!inSystem) {
             inSystem = true;
             startY = y;
           }
-          whiteSpaceCounter = 0; // Reset gap counter
+          gapCounter = 0;
         } else {
+          // No bracket ink here
           if (inSystem) {
-            whiteSpaceCounter++;
-            // If we see too much white space, close the system
-            if (whiteSpaceCounter > GAP_TOLERANCE) {
+            gapCounter++;
+            if (gapCounter > GAP_TOLERANCE) {
+              // Real gap found, close the system
               inSystem = false;
-              let endY = y - whiteSpaceCounter; // Backtrack to where content actually ended
+              let endY = y - gapCounter;
               
-              if ((endY - startY) > MIN_SYSTEM_HEIGHT) {
-                // Found a valid system!
-                // Add some padding
-                systems.push({
+              // Filter out noise (must be > 50px tall to be a system)
+              if ((endY - startY) > 50) {
+                allSystems.push({
                   sourceCanvas: tempCanvas,
-                  y: Math.max(0, startY - 20),
-                  h: Math.min(height, (endY - startY) + 40),
+                  y: Math.max(0, startY - 20), // Add padding
+                  h: (endY - startY) + 40,
                   w: width
                 });
               }
@@ -220,64 +265,60 @@
         }
       }
       
-      // If page ends while in a system
-      if (inSystem && (height - startY) > MIN_SYSTEM_HEIGHT) {
-        systems.push({
-          sourceCanvas: tempCanvas,
-          y: Math.max(0, startY - 20),
-          h: (height - startY) + 20,
-          w: width
-        });
+      // Capture last system if page ends
+      if (inSystem) {
+         let endY = height;
+         if ((endY - startY) > 50) {
+            allSystems.push({
+               sourceCanvas: tempCanvas,
+               y: Math.max(0, startY - 20),
+               h: (endY - startY) + 20,
+               w: width
+            });
+         }
       }
-
-      allSystems.push(...systems);
     }
 
-    // 3. THE PROJECTOR (Renderer)
+    // RENDERER
     function renderSystem() {
-      if (allSystems.length === 0) return;
-      
+      if (!allSystems[currentSystemIndex]) return;
       const sys = allSystems[currentSystemIndex];
-      
-      // Resize display canvas to match aspect ratio of the cut
-      // Actually, we want to fill the screen width, and let height adjust
+      document.getElementById('sysNum').innerText = `${currentSystemIndex + 1} / ${allSystems.length}`;
+
       canvas.width = sys.w;
       canvas.height = sys.h;
 
-      // Draw just that slice
       ctx.fillStyle = "white";
       ctx.fillRect(0,0, canvas.width, canvas.height);
       ctx.drawImage(
-        sys.sourceCanvas, 
-        0, sys.y, sys.w, sys.h, // Source coords
-        0, 0, sys.w, sys.h      // Dest coords
+        sys.sourceCanvas,
+        0, sys.y, sys.w, sys.h, 
+        0, 0, sys.w, sys.h
       );
     }
 
-    // 4. NAVIGATION
     function nextSystem() {
       if (currentSystemIndex < allSystems.length - 1) {
         currentSystemIndex++;
         renderSystem();
       }
     }
-
     function prevSystem() {
       if (currentSystemIndex > 0) {
         currentSystemIndex--;
         renderSystem();
       }
     }
-
-    // Keyboard support (Spacebar / Arrows)
+    
     window.addEventListener('keydown', (e) => {
-      if (e.key === "ArrowRight" || e.key === " ") {
-        nextSystem();
-      } else if (e.key === "ArrowLeft") {
-        prevSystem();
-      }
+      if (e.key === "ArrowRight" || e.key === " ") nextSystem();
+      if (e.key === "ArrowLeft") prevSystem();
     });
 
+    document.getElementById('canvasContainer').addEventListener('click', (e) => {
+      if(e.clientX > window.innerWidth / 2) nextSystem();
+      else prevSystem();
+    });
   </script>
 </body>
 </html>
