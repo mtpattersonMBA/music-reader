@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Precision Cropper: Re-Editable</title>
+  <title>Precision Cropper: Maximize View</title>
   <style>
     /* 1. RESET & LAYOUT */
     body {
       margin: 0;
-      background: #111;
+      background: #000; /* Black background for high contrast */
       color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       overflow: hidden; 
@@ -28,6 +28,7 @@
       align-items: center;
       padding: 20px;
       text-align: center;
+      background: #111;
     }
     .big-file-btn {
       margin-top: 20px;
@@ -43,6 +44,7 @@
       display: flex;
       flex-direction: column;
       height: 100%;
+      background: #111;
     }
 
     #editorToolbar {
@@ -88,7 +90,7 @@
       touch-action: none; 
     }
 
-    /* 4. PERFORMANCE SCREEN */
+    /* 4. PERFORMANCE SCREEN (UPDATED) */
     #performanceScreen {
       display: flex;
       flex-direction: column;
@@ -102,18 +104,21 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 10px;
+      overflow: hidden; /* Ensure no scrollbars */
+      width: 100vw;
+      height: 100%;
     }
     
     #slideCanvas {
-      max-width: 100%;
-      max-height: 100%;
+      /* This ensures the canvas fills the screen while keeping aspect ratio */
+      width: 100%;
+      height: 100%;
       object-fit: contain;
-      background: white; 
+      display: block;
     }
 
     #navControls {
-      height: 15vh;
+      height: 15vh; /* Keep controls accessible at bottom */
       display: flex;
       background: #111;
       border-top: 1px solid #333;
@@ -128,7 +133,6 @@
     }
     .nav-btn:active { background: #222; }
 
-    /* The "Edit" button in player mode */
     #editModeBtn {
       position: absolute;
       top: 20px; left: 20px;
@@ -147,8 +151,8 @@
 <body>
 
   <div id="uploadScreen">
-    <h1>Music System Cropper</h1>
-    <p style="color:#aaa;">Upload &rarr; Draw &rarr; Play &rarr; Edit</p>
+    <h1>Maximizer Cropper</h1>
+    <p style="color:#aaa;">Upload &rarr; Draw &rarr; Maximize</p>
     <input type="file" id="fileInput" accept="application/pdf" class="big-file-btn">
   </div>
 
@@ -159,7 +163,6 @@
         <span id="pageInfo" style="font-weight:bold; font-size:0.9rem;">Pg 1</span>
         <button class="tool-btn" onclick="nextPage()">&rarr;</button>
       </div>
-
       <div class="tool-group">
         <button class="tool-btn danger-btn" onclick="undoBox()">Undo</button>
         <button class="tool-btn success-btn" onclick="goToPlayer()">Play &#9658;</button>
@@ -171,12 +174,10 @@
   </div>
 
   <div id="performanceScreen" class="hidden">
-    <button id="editModeBtn" onclick="returnToEditor()">&#9998; Edit Boxes</button>
-    
+    <button id="editModeBtn" onclick="returnToEditor()">&#9998; Edit</button>
     <div id="slideContainer">
       <canvas id="slideCanvas"></canvas>
     </div>
-    
     <div id="navControls">
       <button class="nav-btn" onclick="prevSlide()">&#8592;</button>
       <button class="nav-btn" onclick="nextSlide()" style="background:#003300; font-weight:bold;">Next &#8594;</button>
@@ -191,14 +192,12 @@
 
     let pdfDoc = null;
     let currentPage = 1;
-    
-    // STATE: "masterBoxList" stores boxes for ALL pages
-    // Structure: { 1: [box, box], 2: [box] }
+    const EDITOR_SCALE = 1.5; // Fixed scale for editing consistency
+
+    // STORAGE
     let masterBoxList = {}; 
-    let currentBoxes = []; // Temp holder for the active page
-    
-    // Player State
-    let playbackList = []; // Flattened list for the player
+    let currentBoxes = []; 
+    let playbackList = []; 
     let playIndex = 0;
 
     // DOM
@@ -211,57 +210,36 @@
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if(!file) return;
-
       const buffer = await file.arrayBuffer();
       pdfDoc = await pdfjsLib.getDocument(buffer).promise;
-
       document.getElementById('uploadScreen').classList.add('hidden');
       document.getElementById('editorScreen').classList.remove('hidden');
-      
       loadEditorPage(1);
     });
 
     // --- 3. EDITOR CORE ---
     async function loadEditorPage(num) {
       if(num < 1 || num > pdfDoc.numPages) return;
-
-      // 1. Save current work before switching
       saveCurrentPageToMaster();
-
       currentPage = num;
       document.getElementById('pageInfo').innerText = `Pg ${num} / ${pdfDoc.numPages}`;
 
-      // 2. Load boxes from memory if they exist
-      if(masterBoxList[num]) {
-        // Create a deep copy so we don't mutate master directly until save
-        currentBoxes = JSON.parse(JSON.stringify(masterBoxList[num]));
-      } else {
-        currentBoxes = [];
-      }
+      if(masterBoxList[num]) currentBoxes = JSON.parse(JSON.stringify(masterBoxList[num]));
+      else currentBoxes = [];
 
-      // 3. Render PDF
       const page = await pdfDoc.getPage(num);
-      const viewport = page.getViewport({ scale: 1.5 });
+      const viewport = page.getViewport({ scale: EDITOR_SCALE });
 
       editorCanvas.width = viewport.width;
       editorCanvas.height = viewport.height;
-      
       await page.render({ canvasContext: ctx, viewport }).promise;
-
-      // Save background for efficient redraws
       editorCanvas.dataset.clean = editorCanvas.toDataURL();
-      
-      // Draw existing boxes (if we went back to this page)
       redraw();
     }
 
     function saveCurrentPageToMaster() {
-      // Save the current state of boxes to the master list
-      if(currentBoxes.length > 0) {
-        masterBoxList[currentPage] = JSON.parse(JSON.stringify(currentBoxes));
-      } else {
-        delete masterBoxList[currentPage]; // Cleanup empty pages
-      }
+      if(currentBoxes.length > 0) masterBoxList[currentPage] = JSON.parse(JSON.stringify(currentBoxes));
+      else delete masterBoxList[currentPage];
     }
 
     function redraw() {
@@ -269,47 +247,34 @@
       img.onload = () => {
         ctx.clearRect(0,0, editorCanvas.width, editorCanvas.height);
         ctx.drawImage(img, 0, 0);
-
-        // Draw saved boxes
         currentBoxes.forEach((box, i) => {
-          ctx.strokeStyle = '#00ff00';
-          ctx.lineWidth = 3;
+          ctx.strokeStyle = '#00ff00'; ctx.lineWidth = 3;
           ctx.strokeRect(box.x, box.y, box.w, box.h);
           ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
           ctx.fillRect(box.x, box.y, box.w, box.h);
-          
-          // Number
-          ctx.fillStyle = '#000';
-          ctx.fillRect(box.x, box.y, 20, 20);
-          ctx.fillStyle = '#fff';
-          ctx.font = 'bold 14px Arial';
+          ctx.fillStyle = '#000'; ctx.fillRect(box.x, box.y, 20, 20);
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Arial';
           ctx.fillText(i+1, box.x+5, box.y+15);
         });
-
-        // Draw Active Drag
         if(isDragging) {
-           const w = currentX - startX;
-           const h = currentY - startY;
-           ctx.strokeStyle = 'yellow';
-           ctx.lineWidth = 2;
+           const w = currentX - startX; const h = currentY - startY;
+           ctx.strokeStyle = 'yellow'; ctx.lineWidth = 2;
            ctx.strokeRect(startX, startY, w, h);
         }
       };
       img.src = editorCanvas.dataset.clean;
     }
 
-    // --- 4. TOUCH LOGIC (Precision Fixed) ---
+    // --- 4. TOUCH LOGIC ---
     let isDragging = false;
     let startX = 0, startY = 0;
     let currentX = 0, currentY = 0;
 
     function getPos(e) {
       const rect = editorCanvas.getBoundingClientRect();
-      let cx = e.clientX;
-      let cy = e.clientY;
+      let cx = e.clientX, cy = e.clientY;
       if(e.changedTouches && e.changedTouches.length > 0) {
-        cx = e.changedTouches[0].clientX;
-        cy = e.changedTouches[0].clientY;
+        cx = e.changedTouches[0].clientX; cy = e.changedTouches[0].clientY;
       }
       const scaleX = editorCanvas.width / rect.width;
       const scaleY = editorCanvas.height / rect.height;
@@ -324,7 +289,6 @@
       startX = pos.x; startY = pos.y;
       isDragging = true;
     };
-
     const moveDraw = (e) => {
       if(!isDragging) return;
       e.preventDefault(); 
@@ -332,150 +296,144 @@
       currentX = pos.x; currentY = pos.y;
       redraw();
     };
-
     const endDraw = (e) => {
       if(!isDragging) return;
       e.preventDefault();
       isDragging = false;
       const pos = getPos(e);
       currentX = pos.x; currentY = pos.y;
-      
-      const w = currentX - startX;
-      const h = currentY - startY;
-
+      const w = currentX - startX, h = currentY - startY;
       if(Math.abs(w) > 20 && Math.abs(h) > 20) {
         const finalX = w < 0 ? currentX : startX;
         const finalY = h < 0 ? currentY : startY;
-        const finalW = Math.abs(w);
-        const finalH = Math.abs(h);
-        currentBoxes.push({ x: finalX, y: finalY, w: finalW, h: finalH });
+        currentBoxes.push({ x: finalX, y: finalY, w: Math.abs(w), h: Math.abs(h) });
       }
       redraw();
     };
-    
-    editorCanvas.addEventListener('dblclick', (e) => {
-       const pos = getPos(e);
-       for(let i = currentBoxes.length - 1; i >= 0; i--) {
-         const b = currentBoxes[i];
-         if(pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h) {
-           currentBoxes.splice(i, 1);
-           redraw();
-           break;
-         }
-       }
-    });
-
     editorCanvas.addEventListener('mousedown', startDraw);
     editorCanvas.addEventListener('mousemove', moveDraw);
     editorCanvas.addEventListener('mouseup', endDraw);
     editorCanvas.addEventListener('touchstart', startDraw, {passive: false});
     editorCanvas.addEventListener('touchmove', moveDraw, {passive: false});
     editorCanvas.addEventListener('touchend', endDraw, {passive: false});
+    editorCanvas.addEventListener('dblclick', (e) => {
+       const pos = getPos(e);
+       for(let i = currentBoxes.length - 1; i >= 0; i--) {
+         const b = currentBoxes[i];
+         if(pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h) {
+           currentBoxes.splice(i, 1); redraw(); break;
+         }
+       }
+    });
 
-
-    // --- 5. NAVIGATION & ACTIONS ---
-    function undoBox() {
-      currentBoxes.pop();
-      redraw();
-    }
-
-    function prevPage() {
-      if(currentPage > 1) loadEditorPage(currentPage - 1);
-    }
-    
-    function nextPage() {
-      if(currentPage < pdfDoc.numPages) loadEditorPage(currentPage + 1);
-    }
+    // --- 5. ACTIONS ---
+    function undoBox() { currentBoxes.pop(); redraw(); }
+    function prevPage() { if(currentPage > 1) loadEditorPage(currentPage - 1); }
+    function nextPage() { if(currentPage < pdfDoc.numPages) loadEditorPage(currentPage + 1); }
 
     function goToPlayer() {
       saveCurrentPageToMaster();
-
-      // Flatten Master List into a Playable Array
       playbackList = [];
-      // Iterate through pages 1 to TotalPages to keep order
       for(let p = 1; p <= pdfDoc.numPages; p++) {
         if(masterBoxList[p]) {
-          masterBoxList[p].forEach(box => {
-            playbackList.push({ pageNum: p, ...box });
-          });
+          masterBoxList[p].forEach(box => playbackList.push({ pageNum: p, ...box }));
         }
       }
-
-      if(playbackList.length === 0) {
-        alert("No boxes drawn yet!");
-        return;
-      }
-
-      // Switch Screens
+      if(playbackList.length === 0) { alert("No boxes drawn!"); return; }
       document.getElementById('editorScreen').classList.add('hidden');
       document.getElementById('performanceScreen').classList.remove('hidden');
-      
-      // Start from beginning? Or stay where we were? 
-      // Let's start from 0 for simplicity, or keep index if robust.
-      // Resetting to 0 avoids out-of-bounds errors.
       playIndex = 0;
       renderSlide();
     }
-
+    
     function returnToEditor() {
       document.getElementById('performanceScreen').classList.add('hidden');
       document.getElementById('editorScreen').classList.remove('hidden');
-      
-      // Optional: Jump editor to the page of the current slide
-      if(playbackList[playIndex]) {
-        loadEditorPage(playbackList[playIndex].pageNum);
-      } else {
-        loadEditorPage(currentPage);
-      }
+      if(playbackList[playIndex]) loadEditorPage(playbackList[playIndex].pageNum);
+      else loadEditorPage(currentPage);
     }
 
-    // --- 6. PLAYER ENGINE ---
+    // --- 6. HIGH-DEF SCALING ENGINE ---
     async function renderSlide() {
       const crop = playbackList[playIndex];
       const page = await pdfDoc.getPage(crop.pageNum);
-      const viewport = page.getViewport({ scale: 1.5 });
 
+      // A. GET SCREEN DIMENSIONS
+      const screenW = window.innerWidth;
+      const screenH = window.innerHeight;
+      const dpr = window.devicePixelRatio || 1;
+
+      // B. CALCULATE OPTIMAL SCALE
+      // 1. Get dimensions of crop at Scale 1.0 (PDF Points)
+      //    Note: crop.w/h are currently at EDITOR_SCALE (1.5). 
+      //    We convert them back to base points.
+      const cropBaseW = crop.w / EDITOR_SCALE;
+      const cropBaseH = crop.h / EDITOR_SCALE;
+
+      // 2. Determine how much we need to scale to fit screen
+      //    We want the crop to fill the screen width OR height (whichever hits first)
+      const scaleW = screenW / cropBaseW;
+      const scaleH = screenH / cropBaseH;
+      
+      // Use the smaller scale so the whole box fits (contain)
+      // Multiply by DPR (e.g. 2 for Retina) for crispness
+      let optimalScale = Math.min(scaleW, scaleH) * dpr;
+      
+      // Safety cap (prevent memory crashes on massive zoom)
+      if(optimalScale > 5) optimalScale = 5;
+
+      // C. RENDER AT HIGH DEFINITION
+      const viewport = page.getViewport({ scale: optimalScale });
+
+      // Create a temporary canvas big enough for the WHOLE page at this high scale
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = viewport.width;
       tempCanvas.height = viewport.height;
       const tempCtx = tempCanvas.getContext('2d');
       
+      // Render the high-res page
       await page.render({ canvasContext: tempCtx, viewport }).promise;
 
-      slideCanvas.width = crop.w;
-      slideCanvas.height = crop.h;
+      // D. CROP THE HIGH-RES RESULT
+      // We need to find where our box is on this NEW High-Res Canvas
+      // Coordinate Math: NewPos = OldPos / EditorScale * OptimalScale
+      const ratio = optimalScale / EDITOR_SCALE;
+      const drawX = crop.x * ratio;
+      const drawY = crop.y * ratio;
+      const drawW = crop.w * ratio;
+      const drawH = crop.h * ratio;
+
+      // Set the Slide Canvas to the exact pixel size of the high-res crop
+      slideCanvas.width = drawW;
+      slideCanvas.height = drawH;
       
+      // Draw just the crop
       slideCtx.fillStyle = "white";
-      slideCtx.fillRect(0,0, crop.w, crop.h);
-      slideCtx.drawImage(tempCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+      slideCtx.fillRect(0,0, slideCanvas.width, slideCanvas.height);
+      slideCtx.drawImage(
+        tempCanvas, 
+        drawX, drawY, drawW, drawH, // Source High Res
+        0, 0, drawW, drawH          // Dest
+      );
     }
 
-    function nextSlide() {
-      if(playIndex < playbackList.length - 1) {
-        playIndex++;
-        renderSlide();
-      }
-    }
-    
-    function prevSlide() {
-      if(playIndex > 0) {
-        playIndex--;
-        renderSlide();
-      }
-    }
+    function nextSlide() { if(playIndex < playbackList.length - 1) { playIndex++; renderSlide(); } }
+    function prevSlide() { if(playIndex > 0) { playIndex--; renderSlide(); } }
     
     document.getElementById('performanceScreen').addEventListener('click', (e) => {
-       // Ignore clicks on the "Edit" button
        if(e.target.id === 'editModeBtn') return;
-       
        if(e.clientX > window.innerWidth / 2) nextSlide();
        else prevSlide();
     });
-    
-    // Keyboard
     window.addEventListener('keydown', (e) => {
       if(e.key === "ArrowRight" || e.key === " ") nextSlide();
       if(e.key === "ArrowLeft") prevSlide();
+    });
+    window.addEventListener('resize', () => {
+       // Re-render on rotate to maintain sharpness
+       if(!document.getElementById('performanceScreen').classList.contains('hidden')) {
+         renderSlide();
+       }
     });
 
   </script>
