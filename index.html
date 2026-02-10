@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Accolade Hunter v2</title>
+  <title>The "Squint" Slicer</title>
   <style>
     body {
       margin: 0;
@@ -109,17 +109,16 @@
 <body>
 
   <div id="uploadScreen">
-    <h1>Accolade Hunter v2</h1>
+    <h1>The "Squint" Slicer</h1>
     <p style="color:#aaa; max-width:400px; line-height:1.5;">
-      Scanning the left <strong>25%</strong> of the page.<br>
-      Ignoring text shorter than 100px (like footers).
+      Uses "Gap Bridging" logic to ignore the white space between Soprano/Alto/Tenor/Bass and keep the system whole.
     </p>
     <input type="file" id="fileInput" accept="application/pdf" class="big-btn">
   </div>
 
   <div id="loader">
-    <div style="font-size: 2rem; margin-bottom: 20px;">Scanning Margins...</div>
-    <div style="color: #aaa;">Detecting vertical brackets</div>
+    <div style="font-size: 2rem; margin-bottom: 20px;">Analyzing Density...</div>
+    <div style="color: #aaa;">Bridging gaps & finding blocks</div>
   </div>
 
   <div id="performanceMode">
@@ -164,7 +163,7 @@
         }
 
         if (allSystems.length === 0) {
-          alert("No brackets found! Is this a choral score?");
+          alert("No music found! Try a clearer PDF.");
           location.reload();
           return;
         }
@@ -183,9 +182,10 @@
       }
     });
 
-    // THE ACCOLADE HUNTER ALGORITHM
+    // THE "SQUINT" ALGORITHM
     async function processPage(pdf, pageNum) {
       const page = await pdf.getPage(pageNum);
+      // Use scale 2.0 to get enough pixel data to be accurate
       const viewport = page.getViewport({ scale: 2.0 }); 
       
       const tempCanvas = document.createElement('canvas');
@@ -199,61 +199,68 @@
       const height = tempCanvas.height;
       const imageData = tempCtx.getImageData(0, 0, width, height).data;
 
-      // STRATEGY v2: Scan wider (25%) but enforce strict height requirements.
-      const MARGIN_RIGHT_BOUNDARY = Math.floor(width * 0.25); 
-      const INK_THRESHOLD = 3; 
+      // STEP 1: Scan the CENTER of the page (Width 25% to 75%)
+      // This avoids margin notes, hole punches, and scanning artifacts
+      const START_X = Math.floor(width * 0.25);
+      const END_X = Math.floor(width * 0.75);
       
-      let rowHasBracket = new Array(height).fill(false);
+      let rowDensity = new Array(height).fill(0);
       
       for (let y = 0; y < height; y++) {
         let darkPixels = 0;
-        // Optimization: Check every 2nd pixel in margin
-        for (let x = 0; x < MARGIN_RIGHT_BOUNDARY; x += 2) {
+        for (let x = START_X; x < END_X; x += 5) { // Sample every 5th pixel
           const i = (y * width + x) * 4;
-          // If dark
-          if (imageData[i] < 200) {
-             darkPixels++;
-             if(darkPixels >= INK_THRESHOLD) {
-               rowHasBracket[y] = true;
-               break; // Found ink, move to next row
-             }
-          }
+          if (imageData[i] < 200) darkPixels++; // Count ink
         }
+        rowDensity[y] = darkPixels;
       }
 
-      // GROUPING LOGIC
+      // STEP 2: The "Gap Bridge" Logic
+      // We iterate through the rows. If we hit whitespace, we peek ahead.
+      // If the whitespace is SMALLER than our bridge limit, we pretend it's ink.
+      
+      // BRIDGE LIMIT: 120 pixels (at 2.0 scale)
+      // This is large enough to jump over lyrics and stave gaps,
+      // but small enough to stop at the System Break.
+      const BRIDGE_LIMIT = 120; 
+      const MIN_INK = 5; // Sensitivity to ink
+
       let inSystem = false;
       let startY = 0;
-      
-      // Increased Gap Tolerance: 
-      // If the bracket line is faint or broken, we allow a bigger gap before giving up.
-      let gapCounter = 0; 
-      const GAP_TOLERANCE = 15; 
+      let whiteSpaceCounter = 0;
 
       for (let y = 0; y < height; y++) {
-        if (rowHasBracket[y]) {
+        // Is there ink on this row?
+        const hasInk = rowDensity[y] > MIN_INK;
+
+        if (hasInk) {
           if (!inSystem) {
             inSystem = true;
             startY = y;
           }
-          gapCounter = 0;
+          whiteSpaceCounter = 0; // Reset gap counter
         } else {
-          // No bracket ink here
+          // No ink here
           if (inSystem) {
-            gapCounter++;
-            if (gapCounter > GAP_TOLERANCE) {
-              // Real gap found, close the system
-              inSystem = false;
-              let endY = y - gapCounter;
+            whiteSpaceCounter++;
+            
+            // HERE IS THE MAGIC:
+            // Only cut the system if the gap exceeds the BRIDGE_LIMIT
+            if (whiteSpaceCounter > BRIDGE_LIMIT) {
               
-              // FILTER: IGNORE SHORT NOISE (FOOTERS)
-              // Only accept if system is > 100px tall. 
-              // A real choral system is usually 300px+ at this resolution.
+              // The system officially ended 'BRIDGE_LIMIT' pixels ago
+              inSystem = false;
+              let endY = y - whiteSpaceCounter;
+              
+              // Validation: Is this block tall enough to be a system?
+              // (Must be > 100px tall to ignore headers/footers)
               if ((endY - startY) > 100) {
+                
+                // Save the system
                 allSystems.push({
                   sourceCanvas: tempCanvas,
-                  y: Math.max(0, startY - 20), // Add padding
-                  h: (endY - startY) + 40,
+                  y: Math.max(0, startY - 30), // Add padding top
+                  h: (endY - startY) + 60,     // Add padding bottom
                   w: width
                 });
               }
@@ -262,14 +269,14 @@
         }
       }
       
-      // Capture last system if page ends
+      // Capture the last system on the page
       if (inSystem) {
          let endY = height;
          if ((endY - startY) > 100) {
             allSystems.push({
                sourceCanvas: tempCanvas,
-               y: Math.max(0, startY - 20),
-               h: (endY - startY) + 20,
+               y: Math.max(0, startY - 30),
+               h: (endY - startY) + 60,
                w: width
             });
          }
