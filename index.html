@@ -1,441 +1,298 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Precision Cropper: Maximize View</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Focus Reader</title>
   <style>
-    /* 1. RESET & LAYOUT */
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --text: #e2e8f0;
+      --accent: #38bdf8;
+      --muted: #94a3b8;
+      --band-width: min(900px, 88vw);
+      --band-height: 220px;
+    }
+
+    * { box-sizing: border-box; }
+
     body {
       margin: 0;
-      background: #000; /* Black background for high contrast */
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden; 
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       height: 100vh;
       display: flex;
       flex-direction: column;
     }
 
-    .hidden { display: none !important; }
-
-    /* 2. UPLOAD SCREEN */
-    #uploadScreen {
-      flex: 1;
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
       display: flex;
-      flex-direction: column;
-      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
       align-items: center;
-      padding: 20px;
-      text-align: center;
-      background: #111;
-    }
-    .big-file-btn {
-      margin-top: 20px;
-      padding: 15px;
-      background: #333;
-      border: 2px dashed #666;
-      color: #fff;
-      border-radius: 10px;
+      padding: 12px;
+      background: #1a2436;
+      border-bottom: 1px solid #334155;
     }
 
-    /* 3. EDITOR SCREEN */
-    #editorScreen {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      background: #111;
-    }
-
-    #editorToolbar {
-      height: 60px;
-      background: #222;
-      border-bottom: 1px solid #444;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0 10px;
-      z-index: 100;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-    }
-
-    .tool-group { display: flex; gap: 8px; align-items: center; }
-    
-    .tool-btn {
-      background: #444;
-      border: none;
-      color: white;
+    .toolbar button,
+    .toolbar .file-label {
+      border: 1px solid #475569;
+      background: #0b1220;
+      color: var(--text);
       padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 0.9rem;
-      font-weight: 600;
-    }
-    .primary-btn { background: #0066cc; }
-    .success-btn { background: #008800; }
-    .danger-btn { background: #880000; }
-    
-    #editorScrollArea {
-      flex: 1;
-      overflow: auto;
-      position: relative;
-      background: #333;
-      touch-action: pan-y; 
-    }
-
-    #editorCanvas {
-      display: block;
-      margin: 0 auto;
-      background: white;
-      box-shadow: 0 0 20px rgba(0,0,0,0.5);
-      touch-action: none; 
-    }
-
-    /* 4. PERFORMANCE SCREEN (UPDATED) */
-    #performanceScreen {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      background: #000;
-      position: relative;
-    }
-    
-    #slideContainer {
-      flex: 1;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      overflow: hidden; /* Ensure no scrollbars */
-      width: 100vw;
-      height: 100%;
-    }
-    
-    #slideCanvas {
-      /* This ensures the canvas fills the screen while keeping aspect ratio */
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-
-    #navControls {
-      height: 15vh; /* Keep controls accessible at bottom */
-      display: flex;
-      background: #111;
-      border-top: 1px solid #333;
-    }
-    .nav-btn {
-      flex: 1;
-      font-size: 2rem;
-      background: #111;
-      color: #fff;
-      border: none;
-      border-right: 1px solid #333;
-    }
-    .nav-btn:active { background: #222; }
-
-    #editModeBtn {
-      position: absolute;
-      top: 20px; left: 20px;
-      background: rgba(0,0,0,0.6);
-      color: #fff;
-      border: 1px solid #555;
-      padding: 10px 20px;
-      border-radius: 20px;
-      font-size: 1rem;
-      z-index: 200;
+      border-radius: 8px;
+      font-size: 14px;
       cursor: pointer;
     }
 
+    .toolbar button:hover,
+    .toolbar .file-label:hover {
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .toolbar button.active {
+      background: #0c4a6e;
+      border-color: #38bdf8;
+    }
+
+    .toolbar .file-label input { display: none; }
+
+    .status {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
+      min-height: 1em;
+    }
+
+    #reader {
+      position: relative;
+      flex: 1;
+      overflow: auto;
+      padding: 24px 12px 48px;
+    }
+
+    #pdfPages {
+      width: fit-content;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .page-canvas {
+      background: white;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+      max-width: 96vw;
+      height: auto;
+    }
+
+    #focusOverlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 30;
+      display: none;
+    }
+
+    #focusOverlay.active { display: block; }
+
+    .focus-mask {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+    }
+
+    .focus-band {
+      position: absolute;
+      left: 50%;
+      width: var(--band-width);
+      height: var(--band-height);
+      transform: translateX(-50%);
+      border: 3px solid var(--accent);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.45), 0 0 0 2px #fff2;
+      background: #0b1220;
+    }
+
+    .focus-content {
+      transform-origin: top left;
+      will-change: transform;
+    }
+
+    .focus-page {
+      display: block;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    }
+
+    .hint {
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid #334155;
+      background: #111827;
+    }
   </style>
 </head>
 <body>
-
-  <div id="uploadScreen">
-    <h1>Maximizer Cropper</h1>
-    <p style="color:#aaa;">Upload &rarr; Draw &rarr; Maximize</p>
-    <input type="file" id="fileInput" accept="application/pdf" class="big-file-btn">
+  <div class="toolbar">
+    <label class="file-label">Load PDF
+      <input id="pdfInput" type="file" accept="application/pdf" />
+    </label>
+    <button id="toggleFocus">Toggle Focus Mode</button>
+    <button id="bandUp">Focus Band Up</button>
+    <button id="bandDown">Focus Band Down</button>
+    <button class="zoom" data-zoom="1">Zoom 1.0x</button>
+    <button class="zoom" data-zoom="1.5">Zoom 1.5x</button>
+    <button class="zoom" data-zoom="2">Zoom 2.0x</button>
+    <span class="status" id="status">Load a PDF to begin.</span>
   </div>
 
-  <div id="editorScreen" class="hidden">
-    <div id="editorToolbar">
-      <div class="tool-group">
-        <button class="tool-btn" onclick="prevPage()">&larr;</button>
-        <span id="pageInfo" style="font-weight:bold; font-size:0.9rem;">Pg 1</span>
-        <button class="tool-btn" onclick="nextPage()">&rarr;</button>
-      </div>
-      <div class="tool-group">
-        <button class="tool-btn danger-btn" onclick="undoBox()">Undo</button>
-        <button class="tool-btn success-btn" onclick="goToPlayer()">Play &#9658;</button>
-      </div>
-    </div>
-    <div id="editorScrollArea">
-      <canvas id="editorCanvas"></canvas>
+  <main id="reader">
+    <section id="pdfPages"></section>
+  </main>
+
+  <div id="focusOverlay" aria-hidden="true">
+    <div class="focus-mask"></div>
+    <div class="focus-band" id="focusBand">
+      <div class="focus-content" id="focusContent"></div>
     </div>
   </div>
 
-  <div id="performanceScreen" class="hidden">
-    <button id="editModeBtn" onclick="returnToEditor()">&#9998; Edit</button>
-    <div id="slideContainer">
-      <canvas id="slideCanvas"></canvas>
-    </div>
-    <div id="navControls">
-      <button class="nav-btn" onclick="prevSlide()">&#8592;</button>
-      <button class="nav-btn" onclick="nextSlide()" style="background:#003300; font-weight:bold;">Next &#8594;</button>
-    </div>
-  </div>
+  <div class="hint">Tip: Focus mode magnifies only the highlighted band. Scroll as normal while the overlay is enabled.</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-
   <script>
-    // --- 1. SETUP ---
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    let pdfDoc = null;
-    let currentPage = 1;
-    const EDITOR_SCALE = 1.5; // Fixed scale for editing consistency
+    const reader = document.getElementById('reader');
+    const pdfPages = document.getElementById('pdfPages');
+    const pdfInput = document.getElementById('pdfInput');
+    const statusEl = document.getElementById('status');
+    const overlay = document.getElementById('focusOverlay');
+    const focusBand = document.getElementById('focusBand');
+    const focusContent = document.getElementById('focusContent');
+    const toggleFocusBtn = document.getElementById('toggleFocus');
 
-    // STORAGE
-    let masterBoxList = {}; 
-    let currentBoxes = []; 
-    let playbackList = []; 
-    let playIndex = 0;
+    let focusEnabled = false;
+    let focusZoom = 1.5;
+    const baseScale = 1.25;
+    let bandTop = Math.max(90, Math.round((window.innerHeight - 220) / 2));
 
-    // DOM
-    const editorCanvas = document.getElementById('editorCanvas');
-    const ctx = editorCanvas.getContext('2d');
-    const slideCanvas = document.getElementById('slideCanvas');
-    const slideCtx = slideCanvas.getContext('2d');
-
-    // --- 2. UPLOAD ---
-    document.getElementById('fileInput').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if(!file) return;
-      const buffer = await file.arrayBuffer();
-      pdfDoc = await pdfjsLib.getDocument(buffer).promise;
-      document.getElementById('uploadScreen').classList.add('hidden');
-      document.getElementById('editorScreen').classList.remove('hidden');
-      loadEditorPage(1);
-    });
-
-    // --- 3. EDITOR CORE ---
-    async function loadEditorPage(num) {
-      if(num < 1 || num > pdfDoc.numPages) return;
-      saveCurrentPageToMaster();
-      currentPage = num;
-      document.getElementById('pageInfo').innerText = `Pg ${num} / ${pdfDoc.numPages}`;
-
-      if(masterBoxList[num]) currentBoxes = JSON.parse(JSON.stringify(masterBoxList[num]));
-      else currentBoxes = [];
-
-      const page = await pdfDoc.getPage(num);
-      const viewport = page.getViewport({ scale: EDITOR_SCALE });
-
-      editorCanvas.width = viewport.width;
-      editorCanvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      editorCanvas.dataset.clean = editorCanvas.toDataURL();
-      redraw();
+    function setStatus(msg) {
+      statusEl.textContent = msg;
     }
 
-    function saveCurrentPageToMaster() {
-      if(currentBoxes.length > 0) masterBoxList[currentPage] = JSON.parse(JSON.stringify(currentBoxes));
-      else delete masterBoxList[currentPage];
+    function clearPages() {
+      pdfPages.innerHTML = '';
+      focusContent.innerHTML = '';
     }
 
-    function redraw() {
-      const img = new Image();
-      img.onload = () => {
-        ctx.clearRect(0,0, editorCanvas.width, editorCanvas.height);
-        ctx.drawImage(img, 0, 0);
-        currentBoxes.forEach((box, i) => {
-          ctx.strokeStyle = '#00ff00'; ctx.lineWidth = 3;
-          ctx.strokeRect(box.x, box.y, box.w, box.h);
-          ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
-          ctx.fillRect(box.x, box.y, box.w, box.h);
-          ctx.fillStyle = '#000'; ctx.fillRect(box.x, box.y, 20, 20);
-          ctx.fillStyle = '#fff'; ctx.font = 'bold 14px Arial';
-          ctx.fillText(i+1, box.x+5, box.y+15);
-        });
-        if(isDragging) {
-           const w = currentX - startX; const h = currentY - startY;
-           ctx.strokeStyle = 'yellow'; ctx.lineWidth = 2;
-           ctx.strokeRect(startX, startY, w, h);
-        }
-      };
-      img.src = editorCanvas.dataset.clean;
-    }
+    async function renderPdf(file) {
+      clearPages();
+      setStatus('Loading PDF...');
 
-    // --- 4. TOUCH LOGIC ---
-    let isDragging = false;
-    let startX = 0, startY = 0;
-    let currentX = 0, currentY = 0;
+      const bytes = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: bytes });
+      const doc = await loadingTask.promise;
 
-    function getPos(e) {
-      const rect = editorCanvas.getBoundingClientRect();
-      let cx = e.clientX, cy = e.clientY;
-      if(e.changedTouches && e.changedTouches.length > 0) {
-        cx = e.changedTouches[0].clientX; cy = e.changedTouches[0].clientY;
+      for (let n = 1; n <= doc.numPages; n += 1) {
+        const page = await doc.getPage(n);
+        const viewport = page.getViewport({ scale: baseScale });
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'page-canvas';
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const pageContext = canvas.getContext('2d');
+        if (!pageContext) throw new Error('Unable to create a 2D context for PDF page rendering.');
+
+        await page.render({ canvasContext: pageContext, viewport }).promise;
+        pdfPages.appendChild(canvas);
+
+        const mirrorCanvas = document.createElement('canvas');
+        mirrorCanvas.className = 'focus-page';
+        mirrorCanvas.width = canvas.width;
+        mirrorCanvas.height = canvas.height;
+
+        const mirrorContext = mirrorCanvas.getContext('2d');
+        if (!mirrorContext) throw new Error('Unable to create a 2D context for focus overlay rendering.');
+
+        mirrorContext.drawImage(canvas, 0, 0);
+        focusContent.appendChild(mirrorCanvas);
       }
-      const scaleX = editorCanvas.width / rect.width;
-      const scaleY = editorCanvas.height / rect.height;
-      return { x: (cx - rect.left) * scaleX, y: (cy - rect.top) * scaleY };
+
+      setStatus(`Loaded ${doc.numPages} page${doc.numPages === 1 ? '' : 's'}.`);
+      syncFocusView();
     }
 
-    const startDraw = (e) => {
-      if(e.touches && e.touches.length > 1) return;
-      if(e.target !== editorCanvas) return;
-      e.preventDefault(); 
-      const pos = getPos(e);
-      startX = pos.x; startY = pos.y;
-      isDragging = true;
-    };
-    const moveDraw = (e) => {
-      if(!isDragging) return;
-      e.preventDefault(); 
-      const pos = getPos(e);
-      currentX = pos.x; currentY = pos.y;
-      redraw();
-    };
-    const endDraw = (e) => {
-      if(!isDragging) return;
-      e.preventDefault();
-      isDragging = false;
-      const pos = getPos(e);
-      currentX = pos.x; currentY = pos.y;
-      const w = currentX - startX, h = currentY - startY;
-      if(Math.abs(w) > 20 && Math.abs(h) > 20) {
-        const finalX = w < 0 ? currentX : startX;
-        const finalY = h < 0 ? currentY : startY;
-        currentBoxes.push({ x: finalX, y: finalY, w: Math.abs(w), h: Math.abs(h) });
+    function syncFocusView() {
+      if (!focusEnabled) return;
+      const readerRect = reader.getBoundingClientRect();
+      const xOffset = readerRect.left + reader.clientLeft + (reader.scrollLeft || 0);
+      const yOffset = readerRect.top + reader.clientTop + (reader.scrollTop || 0);
+
+      focusContent.style.transform = `translate(${-xOffset * focusZoom}px, ${-(yOffset + bandTop) * focusZoom}px) scale(${focusZoom})`;
+      focusBand.style.top = `${bandTop}px`;
+    }
+
+    function setFocusEnabled(enabled) {
+      focusEnabled = enabled;
+      overlay.classList.toggle('active', enabled);
+      toggleFocusBtn.classList.toggle('active', enabled);
+      toggleFocusBtn.textContent = enabled ? 'Disable Focus Mode' : 'Toggle Focus Mode';
+      if (enabled) syncFocusView();
+    }
+
+    pdfInput.addEventListener('change', async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        await renderPdf(file);
+      } catch (err) {
+        console.error(err);
+        setStatus('Failed to load PDF. Check console for details.');
       }
-      redraw();
-    };
-    editorCanvas.addEventListener('mousedown', startDraw);
-    editorCanvas.addEventListener('mousemove', moveDraw);
-    editorCanvas.addEventListener('mouseup', endDraw);
-    editorCanvas.addEventListener('touchstart', startDraw, {passive: false});
-    editorCanvas.addEventListener('touchmove', moveDraw, {passive: false});
-    editorCanvas.addEventListener('touchend', endDraw, {passive: false});
-    editorCanvas.addEventListener('dblclick', (e) => {
-       const pos = getPos(e);
-       for(let i = currentBoxes.length - 1; i >= 0; i--) {
-         const b = currentBoxes[i];
-         if(pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h) {
-           currentBoxes.splice(i, 1); redraw(); break;
-         }
-       }
     });
 
-    // --- 5. ACTIONS ---
-    function undoBox() { currentBoxes.pop(); redraw(); }
-    function prevPage() { if(currentPage > 1) loadEditorPage(currentPage - 1); }
-    function nextPage() { if(currentPage < pdfDoc.numPages) loadEditorPage(currentPage + 1); }
+    toggleFocusBtn.addEventListener('click', () => setFocusEnabled(!focusEnabled));
 
-    function goToPlayer() {
-      saveCurrentPageToMaster();
-      playbackList = [];
-      for(let p = 1; p <= pdfDoc.numPages; p++) {
-        if(masterBoxList[p]) {
-          masterBoxList[p].forEach(box => playbackList.push({ pageNum: p, ...box }));
-        }
-      }
-      if(playbackList.length === 0) { alert("No boxes drawn!"); return; }
-      document.getElementById('editorScreen').classList.add('hidden');
-      document.getElementById('performanceScreen').classList.remove('hidden');
-      playIndex = 0;
-      renderSlide();
-    }
-    
-    function returnToEditor() {
-      document.getElementById('performanceScreen').classList.add('hidden');
-      document.getElementById('editorScreen').classList.remove('hidden');
-      if(playbackList[playIndex]) loadEditorPage(playbackList[playIndex].pageNum);
-      else loadEditorPage(currentPage);
-    }
-
-    // --- 6. HIGH-DEF SCALING ENGINE ---
-    async function renderSlide() {
-      const crop = playbackList[playIndex];
-      const page = await pdfDoc.getPage(crop.pageNum);
-
-      // A. GET SCREEN DIMENSIONS
-      const screenW = window.innerWidth;
-      const screenH = window.innerHeight;
-      const dpr = window.devicePixelRatio || 1;
-
-      // B. CALCULATE OPTIMAL SCALE
-      // 1. Get dimensions of crop at Scale 1.0 (PDF Points)
-      //    Note: crop.w/h are currently at EDITOR_SCALE (1.5). 
-      //    We convert them back to base points.
-      const cropBaseW = crop.w / EDITOR_SCALE;
-      const cropBaseH = crop.h / EDITOR_SCALE;
-
-      // 2. Determine how much we need to scale to fit screen
-      //    We want the crop to fill the screen width OR height (whichever hits first)
-      const scaleW = screenW / cropBaseW;
-      const scaleH = screenH / cropBaseH;
-      
-      // Use the smaller scale so the whole box fits (contain)
-      // Multiply by DPR (e.g. 2 for Retina) for crispness
-      let optimalScale = Math.min(scaleW, scaleH) * dpr;
-      
-      // Safety cap (prevent memory crashes on massive zoom)
-      if(optimalScale > 5) optimalScale = 5;
-
-      // C. RENDER AT HIGH DEFINITION
-      const viewport = page.getViewport({ scale: optimalScale });
-
-      // Create a temporary canvas big enough for the WHOLE page at this high scale
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = viewport.width;
-      tempCanvas.height = viewport.height;
-      const tempCtx = tempCanvas.getContext('2d');
-      
-      // Render the high-res page
-      await page.render({ canvasContext: tempCtx, viewport }).promise;
-
-      // D. CROP THE HIGH-RES RESULT
-      // We need to find where our box is on this NEW High-Res Canvas
-      // Coordinate Math: NewPos = OldPos / EditorScale * OptimalScale
-      const ratio = optimalScale / EDITOR_SCALE;
-      const drawX = crop.x * ratio;
-      const drawY = crop.y * ratio;
-      const drawW = crop.w * ratio;
-      const drawH = crop.h * ratio;
-
-      // Set the Slide Canvas to the exact pixel size of the high-res crop
-      slideCanvas.width = drawW;
-      slideCanvas.height = drawH;
-      
-      // Draw just the crop
-      slideCtx.fillStyle = "white";
-      slideCtx.fillRect(0,0, slideCanvas.width, slideCanvas.height);
-      slideCtx.drawImage(
-        tempCanvas, 
-        drawX, drawY, drawW, drawH, // Source High Res
-        0, 0, drawW, drawH          // Dest
-      );
-    }
-
-    function nextSlide() { if(playIndex < playbackList.length - 1) { playIndex++; renderSlide(); } }
-    function prevSlide() { if(playIndex > 0) { playIndex--; renderSlide(); } }
-    
-    document.getElementById('performanceScreen').addEventListener('click', (e) => {
-       if(e.target.id === 'editModeBtn') return;
-       if(e.clientX > window.innerWidth / 2) nextSlide();
-       else prevSlide();
+    document.getElementById('bandUp').addEventListener('click', () => {
+      bandTop = Math.max(0, bandTop - 40);
+      syncFocusView();
     });
-    window.addEventListener('keydown', (e) => {
-      if(e.key === "ArrowRight" || e.key === " ") nextSlide();
-      if(e.key === "ArrowLeft") prevSlide();
+
+    document.getElementById('bandDown').addEventListener('click', () => {
+      bandTop = Math.min(window.innerHeight - focusBand.clientHeight, bandTop + 40);
+      syncFocusView();
     });
+
+    document.querySelectorAll('.zoom').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        focusZoom = Number(btn.dataset.zoom);
+        document.querySelectorAll('.zoom').forEach((b) => b.classList.toggle('active', b === btn));
+        syncFocusView();
+      });
+    });
+
+    reader.addEventListener('scroll', syncFocusView, { passive: true });
     window.addEventListener('resize', () => {
-       // Re-render on rotate to maintain sharpness
-       if(!document.getElementById('performanceScreen').classList.contains('hidden')) {
-         renderSlide();
-       }
+      bandTop = Math.min(Math.max(0, bandTop), window.innerHeight - focusBand.clientHeight);
+      syncFocusView();
     });
 
+    document.querySelector('[data-zoom="1.5"]').classList.add('active');
+    focusBand.style.top = `${bandTop}px`;
   </script>
 </body>
 </html>
